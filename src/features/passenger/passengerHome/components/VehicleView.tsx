@@ -51,7 +51,6 @@ export function VehicleView({
       contentContainerStyle={styles.vehicleContent}
       showsVerticalScrollIndicator={false}
     >
-      <View style={styles.sheetHandle} />
 
       <View style={styles.vehicleRouteCard}>
         <View style={styles.vehicleRouteTopRow}>

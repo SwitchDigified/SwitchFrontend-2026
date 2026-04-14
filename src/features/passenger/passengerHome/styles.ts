@@ -1092,26 +1092,25 @@ export const styles = StyleSheet.create({
     borderRadius: 4,
     backgroundColor: '#ef4444',
   },
-  bottomSheet: {
-    position: 'absolute',
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: appColors.primary,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    borderTopWidth: 1,
-    borderTopColor: '#0e7490',
-    paddingHorizontal: 14,
-    paddingTop: 14,
-    gap: 10,
-    maxHeight: '85%',
-  },
-  bottomSheetVehicle: {
-    backgroundColor: '#003f41',
-    borderTopColor: '#0f6b6d',
-    maxHeight: '82%',
-  },
+bottomSheet: {
+  position: 'absolute',
+  left: 0,
+  right: 0,
+  bottom: 0,
+  backgroundColor: '#0d1117',          // ← was appColors.primary (green). Now dark neutral.
+  borderTopLeftRadius: 24,
+  borderTopRightRadius: 24,
+  borderTopWidth: 1,
+  borderTopColor: '#1e293b',           // ← was #0e7490 (teal). Now subtle slate.
+  paddingHorizontal: 14,
+  paddingTop: 0,                        // ← was 14. Handle zone provides top spacing now.
+  gap: 10,
+  // maxHeight removed — height is driven by Animated.Value in PlannerLayout
+},
+bottomSheetVehicle: {
+  backgroundColor: appColors.primary,          // ← was #003f41 (green). Now matches bottomSheet.
+  borderTopColor: '#1e2d3d',           // ← was #0f6b6d (teal)
+},
   greetingText: {
     color: '#f8fafc',
     textAlign: 'center',
@@ -1396,4 +1395,10 @@ export const styles = StyleSheet.create({
   pressed: {
     opacity: 0.8,
   },
+  dragHandleZone: {
+  width: '100%',
+  paddingTop: 10,
+  paddingBottom: 6,
+  alignItems: 'center',
+},
 });

@@ -42,7 +42,6 @@ export function PlanView({
         placeholder="Set pickup location"
         variant="dark"
         errorText={error}
-        disabled
         rightAccessory={
           <Pressable
             onPress={onToggleSchedule}

@@ -1,11 +1,13 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { Pressable, View } from 'react-native';
+import { Clock } from 'lucide-react-native';
 
 import { PlacesSearchInput } from '../../../../components/places';
 import { AppButton } from '../../../../components/ui/AppButton';
 import { AppText } from '../../../../components/ui/AppText';
 import { GOOGLE_MAPS_DIRECTIONS_API_KEY } from '../../../../config/api';
 import type { RideLocation } from '../../../../types/ride';
+import { addRecentPlace, getRecentPlaces, type RecentPlace } from '../../../../utils/storage';
 import { DESTINATION_PLACES } from '../constants';
 import { styles } from '../styles';
 
@@ -28,6 +30,25 @@ export function RouteView({
   onSelectDestination,
   onContinue,
 }: RouteViewProps) {
+  const [recentPlaces, setRecentPlaces] = useState<RecentPlace[]>([]);
+
+  useEffect(() => {
+    loadRecentPlaces();
+  }, []);
+
+  const loadRecentPlaces = async () => {
+    const places = await getRecentPlaces();
+    setRecentPlaces(places);
+  };
+
+  const handleSelectDestination = async (location: RideLocation) => {
+    // Update recent places storage
+    const updated = await addRecentPlace(location);
+    setRecentPlaces(updated);
+    // Call parent handler
+    onSelectDestination(location);
+  };
+
   return (
     <>
       <View style={styles.routeCard}>
@@ -56,45 +77,59 @@ export function RouteView({
         apiKey={GOOGLE_MAPS_DIRECTIONS_API_KEY}
         value={destinationInputValue}
         onChangeText={onDestinationInputChange}
-        onPlaceSelected={onSelectDestination}
+        onPlaceSelected={handleSelectDestination}
         placeholder="Your destination"
         variant="dark"
         errorText={error}
-        disabled
       />
 
-      <View style={styles.quickPlaceList}>
-        {DESTINATION_PLACES.map(place => {
-          const Icon = place.icon;
+      {recentPlaces.length > 0 && (
+        <View style={{ marginTop: 16, marginBottom: 16, gap: 8 }}>
+          <AppText variant="sm" style={{ marginBottom: 4, color: '#cbd5e1', fontWeight: '600' }}>
+            Recent Places
+          </AppText>
+          <View style={{ gap: 8 }}>
+            {recentPlaces.map((place) => (
+              <Pressable
+                key={place.placeId || place.address}
+                onPress={() => handleSelectDestination(place)}
+                style={({ pressed }) => [
+                  {
+                    backgroundColor: 'rgba(2, 48, 50, 0.95)',
+                    borderColor: '#0b5f61',
+                    borderWidth: 1,
+                    borderRadius: 12,
+                    paddingHorizontal: 10,
+                    paddingVertical: 8,
+                    flexDirection: 'row',
+                    alignItems: 'center',
+                    gap: 6,
+                  },
+                  pressed ? { opacity: 0.75 } : undefined,
+                ]}
+              >
+                <Clock color="#cbd5e1" size={12} />
+                <View style={{ flex: 1 }}>
+                  <AppText
+                    variant="xs"
+                    style={{
+                      color: '#f8fafc',
+                    }}
+                    numberOfLines={2}
+                  >
+                    {place.address}
+                  </AppText>
+                </View>
+              </Pressable>
+            ))}
+          </View>
+        </View>
+      )}
 
-          return (
-            <Pressable
-              key={place.id}
-              onPress={() => onSelectDestination(place.location)}
-              style={({ pressed }) => [
-                styles.quickPlaceItem,
-                pressed ? styles.pressed : undefined,
-              ]}
-            >
-              <View style={styles.quickPlaceIconWrap}>
-                <Icon color="#dbeafe" size={14} />
-              </View>
-              <View style={styles.quickPlaceTextWrap}>
-                <AppText variant="label" style={styles.quickPlaceTitle}>
-                  {place.title}
-                </AppText>
-                <AppText variant="sm" style={styles.quickPlaceSubtitle}>
-                  {place.subtitle}
-                </AppText>
-              </View>
-            </Pressable>
-          );
-        })}
-      </View>
 
       <AppButton
         title="Continue"
-        variant="secondary"
+        variant="white"
         onPress={onContinue}
         disabled={!canContinueToVehicle}
       />

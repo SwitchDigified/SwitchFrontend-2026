@@ -407,6 +407,7 @@ export function PassengerHomeScreen() {
       pickupLocation={pickupLocation}
       stopLocation={stopLocation}
       destinationLocation={destinationLocation}
+      showPolyline={screen === 'route' || screen === 'vehicle'}
       topInset={insets.top}
       bottomInset={insets.bottom}
       isVehicleScreen={screen === 'vehicle'}
