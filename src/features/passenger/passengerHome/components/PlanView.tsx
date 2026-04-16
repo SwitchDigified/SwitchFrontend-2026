@@ -20,6 +20,18 @@ type PlanViewProps = {
   onToggleSchedule: () => void;
 };
 
+const getTimeBasedGreeting = (hour: number): string => {
+  if (hour >= 5 && hour < 12) {
+    return 'Good Morning';
+  } else if (hour >= 12 && hour < 17) {
+    return 'Good Afternoon';
+  } else if (hour >= 17 && hour < 21) {
+    return 'Good Evening';
+  } else {
+    return 'Good Night';
+  }
+};
+
 export function PlanView({
   passengerName,
   pickupInputValue,
@@ -57,10 +69,13 @@ export function PlanView({
     } as RideLocation,
   }));
 
+  const currentHour = new Date().getHours();
+  const greeting = getTimeBasedGreeting(currentHour);
+
   return (
     <View style={{padding:16, gap:12}}>
       <AppText variant="lg" style={styles.greetingText}>
-        Good Morning {passengerName}
+        {greeting} {passengerName}
       </AppText>
 
       <PlacesSearchInput

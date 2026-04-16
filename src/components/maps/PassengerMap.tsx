@@ -4,8 +4,10 @@ import MapView, { Marker, Region } from 'react-native-maps';
 import type { LatLng, MapStyleElement } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 
-import type { RideLocation } from '../../../types/ride';
+// import type { RideLocation } from '../../../types/ride';
 import { DRIVER_MAP_STYLE } from '../../features/driver/constants/mapStyle';
+import DeliveryIcon from '../../assets/images/icons/passenger_home/user.svg';
+import { RideLocation } from '../../types/ride';
 
 export type PassengerMapProps = {
   mapRegion: Region;
@@ -53,7 +55,6 @@ export function PassengerMap({
 }: PassengerMapProps) {
   const mapRef = useRef<MapView>(null);
 
-  // Auto-fit map to show all markers when both pickup and destination are available
   useEffect(() => {
     if (
       mapRef.current &&
@@ -61,14 +62,8 @@ export function PassengerMap({
       isValidCoordinate(destinationLocation?.coordinates)
     ) {
       mapRef.current.fitToCoordinates(
-        [
-          pickupLocation!.coordinates,
-          destinationLocation!.coordinates,
-        ],
-        {
-          edgePadding,
-          animated: true,
-        }
+        [pickupLocation!.coordinates, destinationLocation!.coordinates],
+        { edgePadding, animated: true }
       );
     }
   }, [pickupLocation, destinationLocation, edgePadding]);
@@ -93,49 +88,59 @@ export function PassengerMap({
       pitchEnabled={false}
       toolbarEnabled={false}
     >
-      {/* Passenger current location pin (at center) */}
       {showPassengerPin && (
         <Marker
           coordinate={mapRegion}
           title="You"
-          pinColor="#3b82f6"
           flat
+          anchor={{ x: 0.5, y: 0.5 }}
         >
           <View style={styles.passengerPin} />
         </Marker>
       )}
 
-      {/* Pickup location marker */}
       {pickupLocation ? (
         <Marker
           coordinate={pickupLocation.coordinates}
           title="Pickup"
           description={pickupLocation.address}
-          pinColor="#22c55e"
-        />
+          flat
+          anchor={{ x: 0.5, y: 1 }}
+        >
+          <View style={styles.pickupMarker}>
+            <DeliveryIcon width={28} height={28} color="#ffffff" />
+          </View>
+        </Marker>
       ) : null}
 
-      {/* Stop location marker */}
       {stopLocation ? (
         <Marker
           coordinate={stopLocation.coordinates}
           title="Stop"
           description={stopLocation.address}
-          pinColor="#38bdf8"
-        />
+          flat
+          anchor={{ x: 0.5, y: 1 }}
+        >
+          <View style={styles.stopMarker}>
+            <DeliveryIcon width={28} height={28} color="#ffffff" />
+          </View>
+        </Marker>
       ) : null}
 
-      {/* Destination location marker */}
       {destinationLocation ? (
         <Marker
           coordinate={destinationLocation.coordinates}
           title="Destination"
           description={destinationLocation.address}
-          pinColor="#f59e0b"
-        />
+          flat
+          anchor={{ x: 0.5, y: 1 }}
+        >
+          <View style={styles.destinationMarker}>
+            <DeliveryIcon width={28} height={28} color="#ffffff" />
+          </View>
+        </Marker>
       ) : null}
 
-      {/* Polyline/Directions from pickup to destination */}
       {showDirections ? (
         <MapViewDirections
           origin={pickupLocation!.coordinates}
@@ -164,5 +169,50 @@ const styles = StyleSheet.create({
     backgroundColor: '#3b82f6',
     borderWidth: 2,
     borderColor: '#ffffff',
+  },
+  pickupMarker: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#22c55e',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  stopMarker: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#38bdf8',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 5,
+  },
+  destinationMarker: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: '#f59e0b',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#ffffff',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 3,
+    elevation: 5,
   },
 });

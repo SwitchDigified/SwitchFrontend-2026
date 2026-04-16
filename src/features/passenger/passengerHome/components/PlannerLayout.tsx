@@ -106,6 +106,12 @@ export function PlannerLayout({
         showPassengerPin={true}
         showPolyline={showPolyline}
         style={styles.map}
+        edgePadding={{
+          top: 50,
+          right: 40,
+          bottom: 400,
+          left: 40,
+        }}
       />
 
       <View style={[styles.topBar, { paddingTop: topInset + 8 }]}>

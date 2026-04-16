@@ -128,31 +128,71 @@ export function DriverRideRequestSheetHost() {
 
   const submitResponse = useCallback(
     async (request: DriverRideRequest, status: 'accepted' | 'skipped' | 'expired') => {
+      console.log('[Component] submitResponse called', {
+        driverId,
+        offerId: request.offerId,
+        rideId: request.rideId,
+        status,
+        isSubmitting,
+      });
+
       if (!driverId || isSubmitting) {
+        console.warn('[Component] Early return - missing driverId or already submitting', {
+          hasDriverId: !!driverId,
+          isSubmitting,
+        });
         return;
       }
 
       setIsSubmitting(status === 'accepted');
 
       try {
+        console.log('[Component] Calling respondToDriverRideRequest...', {
+          driverId,
+          offerId: request.offerId,
+          rideId: request.rideId,
+          status,
+        });
+
         const hasUpdatedOffer = await respondToDriverRideRequest({
           driverId,
           request,
           status
         });
 
+        console.log('[Component] respondToDriverRideRequest returned', {
+          hasUpdatedOffer,
+          status,
+        });
+
         if (!hasUpdatedOffer) {
+          console.warn('[Component] Offer was not updated, clearing driver pending request');
           await clearDriverPendingRideRequest(driverId, request);
         }
 
         if (status === 'accepted') {
+          console.log('[Component] Ride accepted successfully');
           Alert.alert('Ride accepted', 'We are connecting you to the passenger now.');
+        } else {
+          console.log('[Component] Ride response submitted', { status });
         }
       } catch (error) {
+        console.error('[Component] submitResponse FAILED with error', {
+          status,
+          driverId,
+          offerId: request.offerId,
+          rideId: request.rideId,
+          errorMessage: error instanceof Error ? error.message : String(error),
+          errorCode: error instanceof Error && 'code' in error ? (error as any).code : 'UNKNOWN',
+          errorStack: error instanceof Error ? error.stack : 'No stack',
+          fullError: error,
+        });
+
         if (status === 'accepted') {
+          const errorMessage = error instanceof Error ? error.message : 'Try again in a moment.';
           Alert.alert(
             'Unable to accept ride',
-            error instanceof Error ? error.message : 'Try again in a moment.'
+            errorMessage
           );
         }
       } finally {
