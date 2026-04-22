@@ -422,13 +422,59 @@ const ensureEmailIsAvailable = async (email: string) => {
 
 export const getDeviceFcmToken = async (): Promise<string> => {
   try {
-    await messaging().registerDeviceForRemoteMessages().catch(() => undefined);
+    console.log('[authService] 🔑 Getting FCM token...');
+    
+    // Step 1: Request notification permissions (required on iOS 13+)
+    console.log('[authService] 📲 Requesting notification permissions...');
+    try {
+      const permissionStatus = await messaging().requestPermission();
+      console.log('[authService] ✓ Permission status:', {
+        status: permissionStatus,
+        canGetToken: permissionStatus === messaging.AuthorizationStatus.AUTHORIZED || 
+                     permissionStatus === messaging.AuthorizationStatus.PROVISIONAL,
+      });
+    } catch (permissionError) {
+      console.warn('[authService] ⚠️  requestPermission failed or denied:', {
+        message: permissionError instanceof Error ? permissionError.message : String(permissionError),
+      });
+      // Continue anyway - user may have already granted permission
+    }
+
+    // Step 2: Register device (only needed if not auto-registered)
+    try {
+      console.log('[authService] 📱 Registering device for remote messages...');
+      await messaging().registerDeviceForRemoteMessages();
+      console.log('[authService] ✓ Device registered');
+    } catch (registerError) {
+      console.log('[authService] ℹ️  registerDeviceForRemoteMessages skipped:', 
+        (registerError as any)?.code || String(registerError));
+      // Continue - might still be able to get token
+    }
+
+    // Step 3: Get the FCM token
+    console.log('[authService] 🔄 Calling messaging().getToken()...');
     const token = await messaging().getToken();
-    return token.trim();
+    
+    console.log('[authService] ✓ Got token:', {
+      value: token ? token.slice(0, 30) + '...' : 'EMPTY',
+      length: token?.length || 0,
+    });
+
+    if (!token || token === '') {
+      console.error('[authService] ❌ getToken returned empty/null');
+      return '';
+    }
+
+    const trimmed = token.trim();
+    console.log('[authService] ✅ Token ready:', trimmed.slice(0, 30) + '...');
+    return trimmed;
+    
   } catch (error) {
-    console.log('[authService] getDeviceFcmToken:error', {
-      firebaseCode: getFirebaseErrorCode(error) ?? null,
-      message: error instanceof Error ? error.message : 'Unknown error'
+    console.error('[authService] ❌ FAILED getting FCM token:', {
+      code: (error as any)?.code,
+      message: error instanceof Error ? error.message : String(error),
+      namespace: (error as any)?.namespace,
+      hint: 'Check iOS notification permissions and Firebase setup',
     });
     return '';
   }

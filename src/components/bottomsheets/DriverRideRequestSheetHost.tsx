@@ -14,7 +14,7 @@ import { useAppDispatch, useAppSelector } from '../../store/hooks';
 import type { DriverRideRequest } from '../../types/driverRideRequest';
 import { RideRequestSheet } from './RideRequestSheet';
 
-const DEFAULT_RIDE_REQUEST_TIMEOUT_SECONDS = 20;
+const DEFAULT_RIDE_REQUEST_TIMEOUT_SECONDS = 1800; // 30 minutes for testing
 
 const getString = (value: unknown, fallback = ''): string => {
   if (typeof value === 'string' && value.trim().length > 0) {
@@ -39,15 +39,32 @@ const toIsoOrNull = (value: unknown): string | null => {
 const parseDriverRideRequestFromMessage = (
   message: FirebaseMessagingTypes.RemoteMessage
 ): DriverRideRequest | null => {
+  console.log('[RideRequestSheetHost] Incoming FCM message received', {
+    messageType: message.messageType,
+    hasData: !!message.data,
+    dataKeys: Object.keys(message.data ?? {}),
+  });
+
   const data = message.data ?? {};
   const type = getString(data.type);
+  
+  console.log('[RideRequestSheetHost] Message type extracted', { type });
+
   if (type !== 'ride_request') {
+    console.log('[RideRequestSheetHost] Message ignored - not a ride_request', { type });
     return null;
   }
 
   const offerId = getString(data.offerId);
   const rideId = getString(data.rideId);
+  
+  console.log('[RideRequestSheetHost] IDs extracted', { offerId, rideId });
+
   if (!offerId || !rideId) {
+    console.warn('[RideRequestSheetHost] Invalid message - missing offerId or rideId', {
+      hasOfferId: !!offerId,
+      hasRideId: !!rideId,
+    });
     return null;
   }
 
@@ -56,7 +73,7 @@ const parseDriverRideRequestFromMessage = (
     toIsoOrNull(data.expiresAt) ??
     new Date(Date.now() + DEFAULT_RIDE_REQUEST_TIMEOUT_SECONDS * 1000).toISOString();
 
-  return {
+  const request: DriverRideRequest = {
     offerId,
     rideId,
     passengerId: getString(data.passengerId, 'unknown-passenger'),
@@ -66,6 +83,10 @@ const parseDriverRideRequestFromMessage = (
     requestedAt,
     expiresAt
   };
+
+  console.log('[RideRequestSheetHost] DriverRideRequest parsed successfully', request);
+
+  return request;
 };
 
 export function DriverRideRequestSheetHost() {
@@ -83,41 +104,80 @@ export function DriverRideRequestSheetHost() {
 
   const pushIncomingRequest = useCallback(
     (request: DriverRideRequest) => {
+      console.log('[RideRequestSheetHost] pushIncomingRequest called - dispatching setCurrentDriverRideRequest', {
+        offerId: request.offerId,
+        rideId: request.rideId,
+        pickupAddress: request.pickupAddress,
+        destinationAddress: request.destinationAddress,
+      });
       dispatch(setCurrentDriverRideRequest(request));
     },
     [dispatch]
   );
 
   useEffect(() => {
+    console.log('[RideRequestSheetHost] useEffect - Setting up FCM listeners', {
+      driverId,
+      isDriverSession: session?.user.role === 'driver',
+    });
+
     if (!driverId) {
+      console.log('[RideRequestSheetHost] No driverId - dismissing current request and returning');
       dispatch(dismissCurrentDriverRideRequest(undefined));
       return;
     }
 
     const handleRemoteMessage = (message: FirebaseMessagingTypes.RemoteMessage) => {
+      console.log('[RideRequestSheetHost] handleRemoteMessage called', {
+        driverId,
+        messageId: message.messageId,
+        sentTime: message.sentTime,
+      });
+
       const nextRequest = parseDriverRideRequestFromMessage(message);
+      
       if (!nextRequest) {
+        console.log('[RideRequestSheetHost] Failed to parse ride request from message');
         return;
       }
+
+      console.log('[RideRequestSheetHost] Parsed ride request - dispatching to Redux', {
+        driverId,
+        offerId: nextRequest.offerId,
+        rideId: nextRequest.rideId,
+      });
 
       pushIncomingRequest(nextRequest);
     };
 
-    const unsubscribeForeground = messaging().onMessage(handleRemoteMessage);
-    const unsubscribeOpened = messaging().onNotificationOpenedApp(handleRemoteMessage);
-
-    void messaging().getInitialNotification().then((message) => {
-      if (!message) {
-        return;
-      }
+    console.log('[RideRequestSheetHost] Registering FCM listeners...');
+    const unsubscribeForeground = messaging().onMessage((message) => {
+      console.log('[RideRequestSheetHost] FCM onMessage triggered (app in foreground)');
       handleRemoteMessage(message);
     });
 
+    const unsubscribeOpened = messaging().onNotificationOpenedApp((message) => {
+      console.log('[RideRequestSheetHost] FCM onNotificationOpenedApp triggered (app opened from notification)');
+      handleRemoteMessage(message);
+    });
+
+    void messaging().getInitialNotification().then((message) => {
+      if (!message) {
+        console.log('[RideRequestSheetHost] getInitialNotification - no message (app was not started by notification)');
+        return;
+      }
+      console.log('[RideRequestSheetHost] getInitialNotification returned a message (app was killed)');
+      handleRemoteMessage(message);
+    });
+
+    console.log('[RideRequestSheetHost] FCM listeners registered successfully');
+
     return () => {
+      console.log('[RideRequestSheetHost] Cleaning up FCM listeners');
       unsubscribeForeground();
       unsubscribeOpened();
     };
-  }, [dispatch, driverId, pushIncomingRequest]);
+  }, [dispatch, driverId, pushIncomingRequest, session]);
 
   const dismissRequest = useCallback(
     (offerId?: string) => {
@@ -204,21 +264,37 @@ export function DriverRideRequestSheetHost() {
   );
 
   if (!driverId) {
+    console.log('[RideRequestSheetHost] No driverId - returning null');
     return null;
+  }
+
+  const isSheetVisible = Boolean(currentRequest);
+  if (isSheetVisible) {
+    console.log('[RideRequestSheetHost] RideRequestSheet should be VISIBLE', {
+      driverId,
+      offerId: currentRequest?.offerId,
+      rideId: currentRequest?.rideId,
+      pickupAddress: currentRequest?.pickupAddress,
+    });
+  } else {
+    console.log('[RideRequestSheetHost] RideRequestSheet is HIDDEN (no currentRequest)', { driverId });
   }
 
   return (
     <RideRequestSheet
-      visible={Boolean(currentRequest)}
+      visible={isSheetVisible}
       request={currentRequest}
       isSubmitting={isSubmitting}
       onAccept={(request) => {
+        console.log('[RideRequestSheetHost] onAccept triggered', { offerId: request.offerId });
         void submitResponse(request, 'accepted');
       }}
       onSkip={(request) => {
+        console.log('[RideRequestSheetHost] onSkip triggered', { offerId: request.offerId });
         void submitResponse(request, 'skipped');
       }}
       onExpired={(request) => {
+        console.log('[RideRequestSheetHost] onExpired triggered', { offerId: request.offerId });
         void submitResponse(request, 'expired');
       }}
     />

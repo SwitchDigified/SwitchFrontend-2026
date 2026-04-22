@@ -66,7 +66,9 @@ export function BaseBottomSheet({
 const styles = StyleSheet.create({
   root: {
     flex: 1,
-    justifyContent: 'flex-end'
+    justifyContent: 'flex-end',
+    
+
   },
   backdrop: {
     ...StyleSheet.absoluteFillObject,
@@ -77,7 +79,7 @@ const styles = StyleSheet.create({
     borderTopRightRadius: 22,
     borderWidth: 1,
     borderColor: appColors.borderDark,
-    backgroundColor: appColors.surfaceDark,
+    backgroundColor: appColors.primary,
     paddingHorizontal: 16,
     paddingTop: 14,
     paddingBottom: 20

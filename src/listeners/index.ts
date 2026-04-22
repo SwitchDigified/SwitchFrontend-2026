@@ -6,3 +6,8 @@ export {
 export {
   listenToRiderData,
 } from './riderListener';
+
+export {
+  listenToDriverActiveRide,
+  type DriverActiveRide,
+} from './driverRideListener';

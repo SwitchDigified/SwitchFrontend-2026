@@ -133,7 +133,8 @@ export const createRideRequest = createAsyncThunk<
         email: sessionUser.email
       },
       driver: null,
-      schedule
+      schedule,
+      currentRideStatus: state.ride.latestRide?.status ?? null
     };
 
     const ride = await createRideRequestApi(payload);
@@ -251,7 +252,7 @@ const rideSlice = createSlice({
     setRide: (state, action: PayloadAction<RideRequest | null>) => {
       const ride = action.payload;
       if (ride) {
-        console.log('[Yes rideSlice] setRide action payload:',ride);
+        // console.log('[Yes rideSlice] setRide action payload:',ride);
         state.pickupLocation = ride.pickupLocation;
         state.stopLocation = ride.stopLocation ?? null;
         state.destinationLocation = ride.destinationLocation;

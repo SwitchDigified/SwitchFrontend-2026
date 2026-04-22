@@ -1,15 +1,22 @@
-import React, { useMemo, useState } from 'react';
+import React, { useCallback, useMemo, useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, StatusBar, StyleSheet, View } from 'react-native';
 import { Menu, Shield, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import MapView, { Marker } from 'react-native-maps';
 
 import { AppText } from '../../../components/ui/AppText';
 import { DriverRideMap } from '../../../components/maps';
 import { GOOGLE_MAPS_DIRECTIONS_API_KEY } from '../../../config/api';
-import { useAppSelector } from '../../../store/hooks';
+import { useAppDispatch, useAppSelector } from '../../../store/hooks';
+import { logout } from '../../../store/authSlice';
+import { setDriverId, setDriverOnlineState, setDriverAvailableState } from '../../../store/driverLocationSlice';
 import type { DriverUser } from '../../../types/auth';
 import { DriverDrawer } from '../components/DriverDrawer';
-import { useDriverHomeState } from '../hooks/useDriverHomeState';
+import { DUMMY_DESTINATION, DUMMY_DRIVER_LOCATION, DUMMY_PICKUP_LOCATION, RideStatus, UberMap } from '../map';
+import { useLocationTracking } from '../../../hooks/Uselocationtracking';
+import { useFcmTokenSync } from '../hooks/useFcmTokenSync';
+import { syncDriverPresence, setDriverOfflineState, toggleDriverOnlineStatus } from '../../../services/driverLocationService';
+import { listenToDriverLocation } from '../../../listeners/driverLocationListener';
 
 type DriverHomeScreenProps = {
   onNavigateToProfileSetup?: () => void;
@@ -24,65 +31,208 @@ const isDriverProfileComplete = (driver: DriverUser | null): boolean => {
 };
 
 export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenProps) {
+  const dispatch = useAppDispatch();
   const insets = useSafeAreaInsets();
   const bottomTrayPaddingBottom = Math.max(12, insets.bottom + 8);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showProfileSetupModal, setShowProfileSetupModal] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
+  const [isTogglingOnline, setIsTogglingOnline] = useState(false);
+  const [rideRequest, setRideRequest] = useState<any>(null);
+
   const driverData = useAppSelector((state) => state.auth.session?.user ?? null);
+  const currentRide = useAppSelector((state) => state.driverCurrentRide.currentRide);
+  const driverLocationState = useAppSelector((state) => state.driverLocation);
+
   const driverProfile = useMemo(() => {
     if (!driverData || driverData.role !== 'driver') {
       return null;
     }
-
     return driverData;
   }, [driverData]);
+
   const needsProfileSetup = useMemo(() => {
     if (!driverProfile) {
       return false;
     }
-
     return !isDriverProfileComplete(driverProfile);
   }, [driverProfile]);
-  const {
-    session,
-    driverLocation,
-    isOnline,
-    isTracking,
-    rideRequest,
-    initials,
-    isTogglingOnline,
-    onLogout,
-    onToggleOnline,
-    onToggleRideRequestPreview
-  } = useDriverHomeState();
-  console.log("driver location_", driverLocation);
+
+  // Initialize FCM token sync on app/screen mount
+  useFcmTokenSync();
+
+  // Initialize driver ID in Redux on mount
+  React.useEffect(() => {
+    if (driverProfile?.id && driverProfile.id !== driverLocationState.driverId) {
+      dispatch(setDriverId(driverProfile.id));
+    }
+  }, [driverProfile?.id, driverLocationState.driverId, dispatch]);
+
+  // Set up real-time Firestore listener for driver location changes
+  React.useEffect(() => {
+    if (!driverLocationState.driverId) {
+      console.log('[DriverHomeScreen] Skipping listener setup - no driverId in Redux yet');
+      return;
+    }
+
+    console.log('[DriverHomeScreen] Setting up driver location listener:', driverLocationState.driverId);
+
+    const unsubscribe = listenToDriverLocation(
+      driverLocationState.driverId,
+      dispatch,
+      (error) => {
+        console.error('[DriverHomeScreen] Listener error:', {
+          driverId: driverLocationState.driverId,
+          message: error.message,
+        });
+      }
+    );
+
+    // Cleanup: unsubscribe from listener when component unmounts or driverId changes
+    return () => {
+      console.log('[DriverHomeScreen] Cleaning up driver location listener');
+      unsubscribe();
+    };
+  }, [driverLocationState.driverId, dispatch]);
+
+  // Calculate driver initials
+  const initials = useMemo(() => {
+    if (!driverProfile) return 'DR';
+    const first = driverProfile.firstName?.[0] ?? '';
+    const last = driverProfile.lastName?.[0] ?? '';
+    const value = `${first}${last}`.toUpperCase();
+    return value.length > 0 ? value : 'DR';
+  }, [driverProfile]);
+
+  // Use location tracking hook
+  const driverLocation = useLocationTracking({
+    driverId: driverProfile?.id,
+    isOnline: driverLocationState.isOnline,
+    isAvailable: driverLocationState.isAvailable,
+    activeRideId: driverLocationState.activeRideId,
+    enableHighAccuracy: true,
+    timeout: 15000,
+    maximumAge: 0,
+    distanceThreshold: 2,
+    onLocationChange: (state) => {
+      if (state.coords && state.geohash) {
+        console.log(`Location updated: ${state.geohash}`);
+        console.log(`Accuracy: ${state.coords.accuracy}m`);
+      }
+    },
+    onError: (error) => {
+      console.error('Location error:', error.code, error.message);
+    }
+  });
+
+  // Automatically start/stop location tracking based on online status
+  React.useEffect(() => {
+    console.log('[DriverHomeScreen] Online status changed:', driverLocationState.isOnline);
+    
+    if (driverLocationState.isOnline) {
+      console.log('[DriverHomeScreen] Driver is online - starting location tracking');
+      driverLocation.startTracking();
+    } else {
+      console.log('[DriverHomeScreen] Driver is offline - stopping location tracking');
+      driverLocation.stopTracking();
+    }
+  }, [driverLocationState.isOnline, driverLocation]);
+
   const drawerName = driverProfile ? `${driverProfile.firstName} ${driverProfile.lastName}`.trim() : 'Driver';
   const drawerPhone = driverProfile?.phone ?? '';
   const drawerProfilePhoto = driverProfile?.basicProfile?.profilePhotoUrl ?? null;
 
-  const handleToggleOnline = () => {
-    if (!isOnline && needsProfileSetup) {
-      setShowProfileSetupModal(true);
-      return;
+  
+
+  const onToggleRideRequestPreview = useCallback(() => {
+    if (!driverLocationState.isOnline) return;
+    setRideRequest((current: any) => (current ? null : { pickupLocation: { latitude: 9.05785, longitude: 7.49508 }, destinationLocation: { latitude: 9.04104, longitude: 7.48948 } }));
+  }, [driverLocationState.isOnline]);
+
+  const onLogout = useCallback(async () => {
+    console.log('[DriverHomeScreen] Logging out');
+    
+    if (driverProfile?.id && driverLocationState.isOnline) {
+      try {
+        console.log('[DriverHomeScreen] Setting driver offline on logout');
+        // Sync offline state to Firestore
+        await setDriverOfflineState(driverProfile.id, driverLocationState.currentLocation ?? undefined);
+      } catch (error) {
+        console.error('[DriverHomeScreen] Error setting driver offline on logout:', error);
+      }
     }
+    
+    // Update Redux state (useEffect will auto-stop tracking when isOnline becomes false)
+    dispatch(setDriverOnlineState(false));
+    dispatch(setDriverAvailableState(false));
+    setRideRequest(null);
+    dispatch(logout());
+  }, [driverProfile?.id, driverLocationState.isOnline, driverLocationState.currentLocation, dispatch]);
 
-    onToggleOnline();
-  };
+  
+  // Derive ride status from actual currentRide data
+  const rideStatus = useMemo(() => {
+    if (!currentRide) {
+      return 'incoming_request' as RideStatus;
+    }
+    const statusMap: Record<string, RideStatus> = {
+      'requested': 'incoming_request',
+      'accepted': 'accepted',
+      'arrived': 'on_trip',
+      'on_trip': 'on_trip',
+      'completed': 'completed',
+      'cancelled': 'completed',
+      'idle': 'incoming_request'
+    };
+    return (statusMap[currentRide.status] || 'incoming_request') as RideStatus;
+  }, [currentRide?.status]);
 
-  if (!session) {
+  if (!driverData) {
     return null;
   }
 
+  console.log('[DriverHomeScreen] Render state:', {
+    isTracking: driverLocation.isTracking,
+    driverCoords: driverLocation.coords ? { lat: driverLocation.coords.latitude, lng: driverLocation.coords.longitude } : null,
+    isOnline: driverLocationState.isOnline,
+    isAvailable: driverLocationState.isAvailable,
+    activeRideId: driverLocationState.activeRideId,
+    currentRide: currentRide?.id,
+    error: driverLocation.error?.message
+  });
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor="#0a1117" />
+      {/* <View style={styles.mapWrapper}> */}
+        {driverLocation.coords && currentRide?.pickupCoordinates && currentRide?.destinationCoordinates ? (
+          <UberMap
+            driverLocation={{
+              latitude: driverLocation.coords.latitude,
+              longitude: driverLocation.coords.longitude
+            }}
+            pickupLocation={currentRide.pickupCoordinates}
+            destination={currentRide.destinationCoordinates}
+            rideStatus={rideStatus}
+          />
+        ) : (
+          <MapView
+            style={styles.fallbackMapContainer}
+            initialRegion={{
+              latitude: 9.0765,
+              longitude: 7.3986,
+              latitudeDelta: 8,
+              longitudeDelta: 8,
+            }}
+          >
+            <Marker
+              coordinate={{ latitude: 9.0765, longitude: 7.3986 }}
+              title="Nigeria"
+            />
+          </MapView>
+        )}
+      {/* </View> */}
 
-      <DriverRideMap
-        driverLocation={driverLocation}
-        rideRequest={rideRequest}
-        googleMapsApiKey={GOOGLE_MAPS_DIRECTIONS_API_KEY}
-        style={styles.map}
-      />
+ 
 
       <View style={[styles.topRow, { top: insets.top + 8 }]}>
         <Pressable
@@ -90,7 +240,7 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
           style={({ pressed }) => [
             styles.roundButton,
             pressed ? styles.buttonPressed : undefined
-          ]}>
+          ]}>State
           <Menu color="#e2e8f0" size={20} />
         </Pressable>
 
@@ -99,7 +249,7 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
             12 RIDES | N191,700
           </AppText>
           <AppText variant="caption" style={styles.statsLabel}>
-            {rideRequest ? 'Incoming request' : isTracking ? 'Live tracking' : 'Today'}
+            {rideRequest ? 'Incoming request' : driverLocationState.isTracking ? 'Live tracking' : 'Today'}
           </AppText>
         </View>
 
@@ -112,10 +262,10 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
 
       <Pressable
         onPress={onToggleRideRequestPreview}
-        disabled={!isOnline}
+        disabled={!driverLocationState.isOnline}
         style={({ pressed }) => [
           styles.securityFab,
-          !isOnline ? styles.roundButtonDisabled : undefined,
+          !driverLocationState.isOnline ? styles.roundButtonDisabled : undefined,
           pressed ? styles.buttonPressed : undefined
         ]}>
         <Shield color="#1de9b6" size={18} />
@@ -123,11 +273,38 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
 
       <View style={styles.onlineButtonWrap}>
         <Pressable
-          onPress={handleToggleOnline}
-          disabled={isTogglingOnline}
+          onPress={async () => {
+            if (!driverProfile?.id) return;
+            setIsTogglingOnline(true);
+            try {
+              const newOnlineState = !driverLocationState.isOnline;
+              
+              console.log('[DriverHomeScreen] Toggling online status:', {
+                currentState: driverLocationState.isOnline,
+                newState: newOnlineState,
+                driverId: driverProfile.id
+              });
+
+              // Update Redux state immediately (this triggers the useEffect to start/stop tracking)
+              dispatch(setDriverOnlineState(newOnlineState));
+              dispatch(setDriverAvailableState(newOnlineState));
+              
+              // Sync to Firestore
+              await toggleDriverOnlineStatus(driverProfile.id, newOnlineState);
+              
+              console.log('[DriverHomeScreen] Successfully toggled online status to:', newOnlineState);
+            } catch (error) {
+              console.error('[DriverHomeScreen] Error toggling online status:', error);
+              // Revert on error
+              dispatch(setDriverOnlineState(driverLocationState.isOnline));
+              dispatch(setDriverAvailableState(driverLocationState.isAvailable));
+            } finally {
+              setIsTogglingOnline(false);
+            }
+          }}
           style={({ pressed }) => [
             styles.onlineButton,
-            isOnline ? styles.onlineButtonActive : undefined,
+            driverLocationState.isOnline ? styles.onlineButtonActive : undefined,
             isTogglingOnline ? styles.onlineButtonLoading : undefined,
             pressed ? styles.buttonPressed : undefined
           ]}>
@@ -135,7 +312,7 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
             <ActivityIndicator color="#f8fafc" size="large" />
           ) : (
             <AppText variant="button" style={styles.onlineButtonText}>
-              {isOnline ? 'GO OFFLINE!' : 'GO ONLINE!'}
+              {driverLocationState.isOnline ? 'GO OFFLINE!' : 'GO ONLINE!'}
             </AppText>
           )}
         </Pressable>
@@ -144,9 +321,9 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
       <View style={[styles.bottomTray, { paddingBottom: bottomTrayPaddingBottom }]}>
         <View style={styles.statusRow}>
           <AppText variant="label" style={styles.statusText}>
-            {isOnline ? "YOU'RE ONLINE!" : "YOU'RE OFFLINE!"}
+            {driverLocationState.isOnline ? "YOU'RE ONLINE!" : "YOU'RE OFFLINE!"}
           </AppText>
-          <View style={[styles.statusDot, isOnline ? styles.statusDotOnline : styles.statusDotOffline]} />
+          <View style={[styles.statusDot, driverLocationState.isOnline ? styles.statusDotOnline : styles.statusDotOffline]} />
         </View>
       </View>
 
@@ -424,5 +601,25 @@ const styles = StyleSheet.create({
   },
   buttonPressed: {
     opacity: 0.85
-  }
+  },
+  mapWrapper: {
+    flex: 1,
+    marginHorizontal: 16,
+    borderRadius: 16,
+    overflow: 'hidden',
+    backgroundColor: '#DDE3EA',
+  },
+  fallbackMapContainer: {
+    flex: 1,
+    backgroundColor: '#1a3a4a',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: 'rgba(148, 163, 184, 0.2)',
+  },
+  fallbackMapText: {
+    color: '#cbd5e1',
+    fontSize: 24,
+    fontWeight: '600',
+  },
 });

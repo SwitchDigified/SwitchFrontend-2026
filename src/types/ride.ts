@@ -56,6 +56,7 @@ export type CreateRideRequestPayload = {
   rider: RideParticipantRider;
   driver: RideParticipantDriver | null;
   schedule: RideSchedule;
+  currentRideStatus?: string | null;
 };
 
 export type RideRequest = {

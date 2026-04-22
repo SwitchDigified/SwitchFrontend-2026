@@ -3,8 +3,11 @@
  * Handles all driver location and presence synchronization with Firestore
  */
 
-import { upsertDriverPresence } from '../api/firestoreApi';
+import { collection, doc, setDoc } from '@react-native-firebase/firestore';
+import { db } from '../config/firebase';
 import type { DriverLiveLocation } from '../store/driverLocationSlice';
+
+const DRIVER_LOCATIONS_COLLECTION = 'driver_locations';
 
 /**
  * Input shape for syncing driver presence
@@ -30,14 +33,50 @@ export const syncDriverPresence = async ({
 }: DriverPresenceSyncInput) => {
   const updatedAt = location?.updatedAt ?? new Date().toISOString();
 
-  await upsertDriverPresence({
+  // Extract lat/lng from location or use defaults
+  const lat = location?.latitude ?? 0;
+  const lng = location?.longitude ?? 0;
+  const geohash = location?.geohash ?? '';
+
+  const payload = {
     driverId,
-    isOnline,
-    isAvailable,
+    lat,
+    lng,
+    geohash,
     activeRideId,
     updatedAt,
-    location,
-  });
+  };
+
+  console.log('[driverLocationService] syncDriverPresence - Writing directly to Firestore with payload:', payload);
+
+  try {
+    const driverLocationsCollection = collection(db, DRIVER_LOCATIONS_COLLECTION);
+    const driverLocationDocRef = doc(driverLocationsCollection, driverId);
+    
+    console.log('[driverLocationService] syncDriverPresence - Document reference:', {
+      collection: DRIVER_LOCATIONS_COLLECTION,
+      docId: driverId
+    });
+
+    await setDoc(driverLocationDocRef, payload, { merge: true });
+
+    console.log('[driverLocationService] syncDriverPresence - Firestore write success:', {
+      driverId,
+      lat,
+      lng,
+      geohash,
+      updatedAt
+    });
+  } catch (error) {
+    console.error('[driverLocationService] syncDriverPresence - Firestore write error:', {
+      driverId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: (error as any)?.code,
+      errorStack: error instanceof Error ? error.stack : undefined,
+      payload
+    });
+    throw error;
+  }
 };
 
 /**
@@ -57,6 +96,16 @@ export const syncDriverLiveLocation = async ({
   isAvailable: boolean;
   activeRideId?: string | null;
 }) => {
+  console.log('[driverLocationService] syncDriverLiveLocation called with:', {
+    driverId,
+    lat: location.latitude,
+    lng: location.longitude,
+    geohash: location.geohash,
+    isOnline,
+    isAvailable,
+    activeRideId
+  });
+
   await syncDriverPresence({
     driverId,
     isOnline,
@@ -74,6 +123,8 @@ export const setDriverOfflineState = async (
   driverId: string,
   location?: DriverLiveLocation | null,
 ) => {
+  console.log('[driverLocationService] setDriverOfflineState called for:', driverId);
+
   await syncDriverPresence({
     driverId,
     isOnline: false,
@@ -81,4 +132,125 @@ export const setDriverOfflineState = async (
     activeRideId: null,
     location: location ?? null,
   });
+};
+
+/**
+ * Toggles driver's online status in driver_locations collection
+ */
+export const toggleDriverOnlineStatus = async (
+  driverId: string,
+  isOnline: boolean,
+) => {
+  const payload = {
+    isOnline,
+    updatedAt: new Date().toISOString(),
+  };
+
+  console.log('[driverLocationService] toggleDriverOnlineStatus called:', {
+    driverId,
+    isOnline,
+  });
+
+  try {
+    const driverLocationsCollection = collection(db, DRIVER_LOCATIONS_COLLECTION);
+    const driverLocationDocRef = doc(driverLocationsCollection, driverId);
+
+    await setDoc(driverLocationDocRef, payload, { merge: true });
+
+    console.log('[driverLocationService] toggleDriverOnlineStatus - Firestore write success:', {
+      driverId,
+      isOnline,
+      updatedAt: payload.updatedAt,
+    });
+  } catch (error) {
+    console.error('[driverLocationService] toggleDriverOnlineStatus - Firestore write error:', {
+      driverId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: (error as any)?.code,
+      payload,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Toggles driver's available status in driver_locations collection
+ */
+export const toggleDriverAvailableStatus = async (
+  driverId: string,
+  isAvailable: boolean,
+) => {
+  const payload = {
+    isAvailable,
+    updatedAt: new Date().toISOString(),
+  };
+
+  console.log('[driverLocationService] toggleDriverAvailableStatus called:', {
+    driverId,
+    isAvailable,
+  });
+
+  try {
+    const driverLocationsCollection = collection(db, DRIVER_LOCATIONS_COLLECTION);
+    const driverLocationDocRef = doc(driverLocationsCollection, driverId);
+
+    await setDoc(driverLocationDocRef, payload, { merge: true });
+
+    console.log('[driverLocationService] toggleDriverAvailableStatus - Firestore write success:', {
+      driverId,
+      isAvailable,
+      updatedAt: payload.updatedAt,
+    });
+  } catch (error) {
+    console.error('[driverLocationService] toggleDriverAvailableStatus - Firestore write error:', {
+      driverId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: (error as any)?.code,
+      payload,
+    });
+    throw error;
+  }
+};
+
+/**
+ * Toggles both driver's online and available status in driver_locations collection
+ */
+export const toggleDriverOnlineAndAvailableStatus = async (
+  driverId: string,
+  isOnline: boolean,
+  isAvailable: boolean,
+) => {
+  const payload = {
+    isOnline,
+    isAvailable,
+    updatedAt: new Date().toISOString(),
+  };
+
+  console.log('[driverLocationService] toggleDriverOnlineAndAvailableStatus called:', {
+    driverId,
+    isOnline,
+    isAvailable,
+  });
+
+  try {
+    const driverLocationsCollection = collection(db, DRIVER_LOCATIONS_COLLECTION);
+    const driverLocationDocRef = doc(driverLocationsCollection, driverId);
+
+    await setDoc(driverLocationDocRef, payload, { merge: true });
+
+    console.log('[driverLocationService] toggleDriverOnlineAndAvailableStatus - Firestore write success:', {
+      driverId,
+      isOnline,
+      isAvailable,
+      updatedAt: payload.updatedAt,
+    });
+  } catch (error) {
+    console.error('[driverLocationService] toggleDriverOnlineAndAvailableStatus - Firestore write error:', {
+      driverId,
+      errorMessage: error instanceof Error ? error.message : String(error),
+      errorCode: (error as any)?.code,
+      payload,
+    });
+    throw error;
+  }
 };

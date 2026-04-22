@@ -190,6 +190,7 @@ export function listenToActivePassengerRide(
   return subscribePassengerRideDocuments(
     passengerId,
     (docs) => {
+      // console.log("RIDE DOCS", docs)
       const activeRides = docs
         .map((docItem) => normalizeRide(docItem.id, docItem.data as FirestoreRide))
         .filter((ride) => !TERMINAL_STATUSES.includes(ride.status));

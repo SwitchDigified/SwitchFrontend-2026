@@ -24,7 +24,7 @@ export const getScreenTitle = (screen: FlowScreen) => {
     return 'Driver Arrived';
   }
 
-  if (screen === 'en_route') {
+  if (screen === 'on_trip') {
     return 'En Route';
   }
 

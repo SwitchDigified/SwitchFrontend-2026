@@ -1,19 +1,27 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { Region } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { View, ActivityIndicator, Pressable } from 'react-native';
+import { AlertTriangle } from 'lucide-react-native';
 
 import { usePassengerHomeState } from '../hooks/usePassengerHomeState';
+import { usePassengerLocationTracking } from '../hooks/usePassengerLocationTracking';
+import { useFcmTokenSync } from '../hooks/useFcmTokenSync';
 import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import {
   cancelRideRequest,
   clearRideError,
-  createRideRequest,
   setDestinationLocation,
   setPickupLocation,
   setRideType,
   setScheduleType,
   setStopLocation,
+  setRide,
 } from '../../../store/rideSlice';
+import { listenToActivePassengerRide } from '../../../listeners';
+import { AppText } from '../../../components/ui/AppText';
+import { LoadingOverlay } from '../../../components/ui/LoadingOverlay';
+import { appColors } from '../../../theme/colors';
 import type {
   RideLocation,
   RideMatchingData,
@@ -44,13 +52,16 @@ const getScreenBasedOnRideStatus = (
     case 'arrived':
       return 'arrived';
     case 'on_trip':
-      return 'en_route';
+      return 'on_trip';
     default:
       return 'plan';
   }
 };
 
 export function PassengerHomeScreen() {
+  const riderData = useAppSelector(s=>s.passengerProfile
+)
+  console.log("rideerData", riderData)
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const { session, onLogout } = usePassengerHomeState();
@@ -68,6 +79,12 @@ export function PassengerHomeScreen() {
   } = useAppSelector(state => state.ride);
   // console.log('Latest Ride:', latestRide);
 
+  // Initialize passenger location tracking on app/screen mount
+  usePassengerLocationTracking();
+
+  // Initialize FCM token sync on app/screen mount
+  useFcmTokenSync();
+
   const [screen, setScreen] = useState<FlowScreen>('home');
   const [pickupInputValue, setPickupInputValue] = useState(
     pickupLocation?.address ?? '',
@@ -79,6 +96,55 @@ export function PassengerHomeScreen() {
   const [showStopPicker, setShowStopPicker] = useState(false);
   const hasLoggedFindingScreen = useRef(false);
   const [drawerVisible, setDrawerVisible] = useState(false);
+  
+  // Loading and error states for initial data fetch
+  const [isLoadingData, setIsLoadingData] = useState(true);
+  const [dataFetchError, setDataFetchError] = useState<string | null>(null);
+  const unsubscribeRef = useRef<(() => void) | null>(null);
+
+  // Fetch and listen to ride data on component mount
+  const fetchRideData = useCallback(() => {
+    if (!session?.user?.id) {
+      setIsLoadingData(false);
+      return;
+    }
+
+    setIsLoadingData(true);
+    setDataFetchError(null);
+
+    // console.log('[PassengerHomeScreen] Fetching ride data for passenger:', session.user.id);
+
+    try {
+      unsubscribeRef.current = listenToActivePassengerRide(
+        session.user.id,
+        (ride) => {
+          // console.log('[PassengerHomeScreen] Ride data updated:', ride?.status || 'no active ride');
+          dispatch(setRide(ride));
+          setIsLoadingData(false);
+        },
+        (error) => {
+          console.error('[PassengerHomeScreen] Error fetching ride data:', error);
+          setDataFetchError(error instanceof Error ? error.message : 'Failed to load ride data');
+          setIsLoadingData(false);
+        }
+      );
+    } catch (error) {
+      console.error('[PassengerHomeScreen] Error setting up ride listener:', error);
+      setDataFetchError(error instanceof Error ? error.message : 'Failed to fetch ride data');
+      setIsLoadingData(false);
+    }
+  }, [session?.user?.id, dispatch]);
+
+  useEffect(() => {
+    fetchRideData();
+
+    return () => {
+      // console.log('[PassengerHomeScreen] Cleaning up ride listener');
+      if (unsubscribeRef.current) {
+        unsubscribeRef.current();
+      }
+    };
+  }, [fetchRideData]);
 
   useEffect(() => {
     setPickupInputValue(pickupLocation?.address ?? '');
@@ -127,10 +193,10 @@ export function PassengerHomeScreen() {
 
   const sessionUser = session?.user ?? null;
   const passengerUser = sessionUser?.role === 'passenger' ? sessionUser : null;
-  const passengerName = sessionUser
+  const passengerName = sessionUser && sessionUser.firstName && sessionUser.lastName
     ? `@${sessionUser.firstName.toLowerCase()}_${sessionUser.lastName.toLowerCase()}`
     : '@passenger';
-  const avatarLabel = sessionUser
+  const avatarLabel = sessionUser && sessionUser.firstName && sessionUser.lastName
     ? toInitials(sessionUser.firstName, sessionUser.lastName)
     : 'ME';
 
@@ -188,7 +254,7 @@ export function PassengerHomeScreen() {
       screen !== 'finding' &&
       screen !== 'accepted' &&
       screen !== 'arrived' &&
-      screen !== 'en_route'
+      screen !== 'on_trip'
     ) {
       return;
     }
@@ -245,15 +311,8 @@ export function PassengerHomeScreen() {
     setScreen('vehicle');
   };
 
-  const onFindDriver = async () => {
-    if (!pickupLocation || !destinationLocation) {
-      return;
-    }
-
-    const resultAction = await dispatch(createRideRequest({ paymentMethod }));
-    if (createRideRequest.fulfilled.match(resultAction)) {
-      setScreen('finding');
-    }
+  const onFindDriver = () => {
+    setScreen('finding');
   };
 
   const onClearDestination = () => {
@@ -300,6 +359,42 @@ export function PassengerHomeScreen() {
   const openDrawer = () => setDrawerVisible(true);
   const closeDrawer = () => setDrawerVisible(false);
 
+  // Render loading overlay while fetching data
+  if (isLoadingData && !latestRide) {
+    return <LoadingOverlay visible={true} message="Loading your ride data..." />;
+  }
+
+  // Render error screen with retry
+  if (dataFetchError && !latestRide) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: appColors.surfaceLight, paddingHorizontal: 24 }}>
+        <View style={{ alignItems: 'center', gap: 16 }}>
+          <AlertTriangle size={48} color={appColors.danger} strokeWidth={1.5} />
+          <AppText variant="title" style={{ textAlign: 'center' }}>
+            Unable to Load Ride Data
+          </AppText>
+          <AppText variant="body" style={{ textAlign: 'center', color: appColors.textMuted }}>
+            {dataFetchError}
+          </AppText>
+        </View>
+        <Pressable
+          onPress={fetchRideData}
+          style={{
+            marginTop: 32,
+            backgroundColor: appColors.primary,
+            paddingHorizontal: 24,
+            paddingVertical: 12,
+            borderRadius: 8,
+          }}
+        >
+          <AppText variant="label" style={{ textAlign: 'center', color: appColors.textLight }}>
+            Retry
+          </AppText>
+        </Pressable>
+      </View>
+    );
+  }
+
   const onSelectVehicleOption = (selectedRideType: RideType) => {
     dispatch(setRideType(selectedRideType));
   };
@@ -333,10 +428,11 @@ export function PassengerHomeScreen() {
     screen === 'finding' ||
     screen === 'accepted' ||
     screen === 'arrived' ||
-    screen === 'en_route'
+    screen === 'on_trip'
   ) {
     return (
       <>
+        <LoadingOverlay visible={isLoadingData} message="Updating ride data..." />
          <HomeView
            avatarLabel={avatarLabel}
            passengerName={passengerName}
@@ -353,7 +449,7 @@ export function PassengerHomeScreen() {
          <PassengerDrawer
            visible={drawerVisible}
            onClose={closeDrawer}
-           passengerName={sessionUser ? `${sessionUser.firstName} ${sessionUser.lastName}` : 'Passenger'}
+           passengerName={sessionUser && sessionUser.firstName && sessionUser.lastName ? `${sessionUser.firstName} ${sessionUser.lastName}` : 'Passenger'}
            passengerPhone={sessionUser?.phone || ''}
            onLogout={() => {
              closeDrawer();
@@ -395,7 +491,7 @@ export function PassengerHomeScreen() {
         />
 
         <EnRouteScreen
-          visible={screen === 'en_route'}
+          visible={screen === 'on_trip'}
           topInset={insets.top}
           bottomInset={insets.bottom}
           mapRegion={mapRegion}
@@ -416,20 +512,22 @@ export function PassengerHomeScreen() {
   }
 
   return (
-    <PlannerLayout
-      title={getScreenTitle(screen)}
-      avatarLabel={avatarLabel}
-      mapRegion={mapRegion}
-      pickupLocation={pickupLocation}
-      stopLocation={stopLocation}
-      destinationLocation={destinationLocation}
-      showPolyline={screen === 'route' || screen === 'vehicle'}
-      topInset={insets.top}
-      bottomInset={insets.bottom}
-      isVehicleScreen={screen === 'vehicle'}
-      currentScreen={screen}
-      onBackPress={onBackPress}
-    >
+    <>
+      <LoadingOverlay visible={isLoadingData} message="Updating ride data..." />
+      <PlannerLayout
+        title={getScreenTitle(screen)}
+        avatarLabel={avatarLabel}
+        mapRegion={mapRegion}
+        pickupLocation={pickupLocation}
+        stopLocation={stopLocation}
+        destinationLocation={destinationLocation}
+        showPolyline={screen === 'route' || screen === 'vehicle'}
+        topInset={insets.top}
+        bottomInset={insets.bottom}
+        isVehicleScreen={screen === 'vehicle'}
+        currentScreen={screen}
+        onBackPress={onBackPress}
+      >
       {screen === 'plan' ? (
         <PlanView
           passengerName={passengerName}
@@ -476,6 +574,7 @@ export function PassengerHomeScreen() {
           canFindDriver={canFindDriver}
         />
       ) : null}
-    </PlannerLayout>
+      </PlannerLayout>
+    </>
   );
 }

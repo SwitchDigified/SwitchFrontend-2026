@@ -8,6 +8,7 @@ import MapViewDirections from 'react-native-maps-directions';
 import { DRIVER_MAP_STYLE } from '../../features/driver/constants/mapStyle';
 import DeliveryIcon from '../../assets/images/icons/passenger_home/user.svg';
 import { RideLocation } from '../../types/ride';
+import { GOOGLE_MAPS_DIRECTIONS_API_KEY } from '../../config/api';
 
 export type PassengerMapProps = {
   mapRegion: Region;
@@ -46,7 +47,7 @@ export function PassengerMap({
   pickupLocation,
   destinationLocation,
   stopLocation,
-  googleMapsApiKey = 'AIzaSyBWM3mSjwH0AGvePtRzsemxzUPAMZlHOUQ',
+  googleMapsApiKey = GOOGLE_MAPS_DIRECTIONS_API_KEY,
   showPassengerPin = true,
   showPolyline = false,
   customMapStyle = DRIVER_MAP_STYLE,

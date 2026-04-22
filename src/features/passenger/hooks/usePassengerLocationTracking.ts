@@ -9,8 +9,7 @@ import {
   PassengerLiveLocation,
   setPassengerLocation,
   setTracking,
-  setPassengerOnlineStatus,
-  setWaitingForRide
+  setPassengerOnlineStatus
 } from '../../../store/passengerLocationSlice';
 import { logout, updatePassengerSessionLocation } from '../../../store/authSlice';
 import { useAppDispatch, useAppSelector } from '../../../store/hooks';
@@ -27,22 +26,33 @@ import {
 } from '../../../utils/locationTracking';
 import { encodeGeohash } from '../../../utils/geohash';
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
 /**
  * Builds passenger live location from geolocation response
  * Similar to buildDriverLiveLocation but for passengers
  */
-const buildPassengerLiveLocation = (position: GeolocationResponse): PassengerLiveLocation => ({
-  latitude: position.coords.latitude,
-  longitude: position.coords.longitude,
-  heading: position.coords.heading ?? null,
-  speed: position.coords.speed ?? null,
-  accuracy: position.coords.accuracy ?? null,
-  geohash: encodeGeohash(
-    position.coords.latitude,
-    position.coords.longitude
-  ),
-  updatedAt: new Date().toISOString()
-});
+const buildPassengerLiveLocation = (
+  position: GeolocationResponse
+): PassengerLiveLocation | null => {
+  const latitude = position.coords.latitude;
+  const longitude = position.coords.longitude;
+
+  if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
+    return null;
+  }
+
+  return {
+    latitude,
+    longitude,
+    heading: isFiniteNumber(position.coords.heading) ? position.coords.heading : null,
+    speed: isFiniteNumber(position.coords.speed) ? position.coords.speed : null,
+    accuracy: isFiniteNumber(position.coords.accuracy) ? position.coords.accuracy : null,
+    geohash: encodeGeohash(latitude, longitude),
+    updatedAt: new Date().toISOString()
+  };
+};
 
 export function usePassengerLocationTracking() {
   const dispatch = useAppDispatch();
@@ -63,6 +73,10 @@ export function usePassengerLocationTracking() {
    */
   const onToggleOnline = useCallback(async () => {
     if (!session || session.user.role !== 'passenger') return;
+    if (!session.user.id) {
+      console.warn('[PassengerLocation] Skipping online toggle because passenger id is missing');
+      return;
+    }
 
     const next = !isOnline;
 
@@ -86,8 +100,8 @@ export function usePassengerLocationTracking() {
    * Logout and cleanup location tracking
    */
   const onLogout = useCallback(() => {
-    if (session?.user.role === 'passenger' && currentLocation) {
-      void setPassengerOfflineState(session.user.id).catch(() => undefined);
+    if (session?.user.role === 'passenger' && currentLocation && session.user.id) {
+      setPassengerOfflineState(session.user.id).catch(() => undefined);
     }
     dispatch(logout());
   }, [dispatch, session, currentLocation]);
@@ -119,10 +133,19 @@ export function usePassengerLocationTracking() {
   // Effect 1: Keep syncLocationRef current without restarting the watcher
   useEffect(() => {
     syncLocationRef.current = async (location: PassengerLiveLocation) => {
+      const passengerId = session?.user.role === 'passenger' ? session.user.id : '';
+      if (!passengerId) {
+        return;
+      }
+
       const previousLocation = lastSyncedLocationRef.current;
-      const movedEnough = previousLocation
-        ? calculateDistanceInMeters(previousLocation, location) >= LOCATION_DISTANCE_THRESHOLD_IN_METERS
-        : true;
+      const distanceMoved = previousLocation
+        ? calculateDistanceInMeters(previousLocation, location)
+        : null;
+      const movedEnough =
+        distanceMoved === null ||
+        (Number.isFinite(distanceMoved) &&
+          distanceMoved >= LOCATION_DISTANCE_THRESHOLD_IN_METERS);
 
       if (!movedEnough) return;
 
@@ -143,12 +166,12 @@ export function usePassengerLocationTracking() {
       };
 
       await syncPassengerLiveLocation(
-        session!.user.id,
+        passengerId,
         geolocationResponse,
         location.geohash
       );
     };
-  }, [dispatch, session]);
+  }, [session]);
 
   // Effect 2: Start the geolocation watcher ONCE on mount
   useEffect(() => {
@@ -159,15 +182,25 @@ export function usePassengerLocationTracking() {
 
     const handlePositionSuccess = (position: GeolocationResponse) => {
       const newLocation = buildPassengerLiveLocation(position);
+      if (!newLocation) {
+        if (__DEV__) {
+          console.log('[PassengerLocation] Ignored geolocation update with invalid coordinates');
+        }
+        return;
+      }
 
       // MANUAL DISTANCE CHECK - Workaround for unreliable distanceFilter on Android
       const lastLocation = lastProcessedLocationRef.current;
       const distanceMoved = lastLocation
         ? calculateDistanceInMeters(lastLocation, newLocation)
-        : Infinity;
+        : null;
+      const movedEnough =
+        distanceMoved === null ||
+        (Number.isFinite(distanceMoved) &&
+          distanceMoved >= LOCATION_DISTANCE_THRESHOLD_IN_METERS);
 
       // Only process if moved enough or it's the first location
-      if (distanceMoved >= LOCATION_DISTANCE_THRESHOLD_IN_METERS || !lastLocation) {
+      if (movedEnough) {
         // Update the last processed location
         lastProcessedLocationRef.current = newLocation;
 
@@ -185,16 +218,16 @@ export function usePassengerLocationTracking() {
 
         // Only sync to Firestore when online
         if (isOnlineRef.current) {
-          void syncLocationRef.current(newLocation).catch((error) => {
+          syncLocationRef.current(newLocation).catch((error) => {
             console.error('Error syncing passenger location:', error);
           });
         }
 
         // Log only when actually updated (for debugging)
-        if (__DEV__ && distanceMoved > 0) {
+        if (__DEV__ && typeof distanceMoved === 'number' && distanceMoved > 0) {
           console.log(`Passenger location updated - moved ${distanceMoved.toFixed(2)} meters`);
         }
-      } else if (__DEV__ && distanceMoved > 0) {
+      } else if (__DEV__ && typeof distanceMoved === 'number' && distanceMoved > 0) {
         // Optional: log ignored updates for debugging
         console.log(`Passenger location ignored - moved only ${distanceMoved.toFixed(2)} meters`);
       }
@@ -227,7 +260,6 @@ export function usePassengerLocationTracking() {
       watchStartedRef.current = false;
       dispatch(setTracking(false));
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [dispatch, session]);
 
   // Effect 3: Mirror isOnline into a ref so the watcher callback always reads
@@ -236,8 +268,8 @@ export function usePassengerLocationTracking() {
   useEffect(() => {
     isOnlineRef.current = isOnline;
 
-    if (!isOnline && session?.user.role === 'passenger') {
-      void setPassengerOfflineState(session.user.id).catch(() => undefined);
+    if (!isOnline && session?.user.role === 'passenger' && session.user.id) {
+      setPassengerOfflineState(session.user.id).catch(() => undefined);
     }
   }, [isOnline, session]);
 

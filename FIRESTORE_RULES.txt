@@ -9,6 +9,7 @@ service cloud.firestore {
                       resource.data.driver != null
                       && resource.data.driver.id == request.auth.uid
                     )
+                    || resource.data.status == "requested"
                   );
 
       allow create: if request.auth != null

@@ -1,6 +1,10 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { useAppDispatch, useAppSelector } from '../../store/hooks';
+import { showError, showSuccess } from '../../store/toastSlice';
+import { ridesApi } from '../../api/apiClient';
+import { UberMap } from '../../features/driver/map/UberMap';
 
 import type { DriverRideRequest } from '../../types/driverRideRequest';
 import { appColors } from '../../theme/colors';
@@ -12,8 +16,6 @@ type RideRequestSheetProps = {
   visible: boolean;
   request: DriverRideRequest | null;
   isSubmitting?: boolean;
-  onAccept: (request: DriverRideRequest) => void;
-  onSkip: (request: DriverRideRequest) => void;
   onExpired: (request: DriverRideRequest) => void;
 };
 
@@ -30,12 +32,15 @@ export function RideRequestSheet({
   visible,
   request,
   isSubmitting = false,
-  onAccept,
-  onSkip,
   onExpired
 }: RideRequestSheetProps) {
   const insets = useSafeAreaInsets();
+  const dispatch = useAppDispatch();
+  const driverId = useAppSelector((state) => state.auth.session?.user.id);
+  const driverLocation = useAppSelector((state) => state.driverLocation.currentLocation);
   const [remainingSeconds, setRemainingSeconds] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
+  console.log('[RideRequestSheet] Rendered with request:', request, 'visible:', visible, 'driverId:', driverId);
 
   const requestId = request?.offerId ?? null;
   const isActive = visible && Boolean(request);
@@ -67,14 +72,72 @@ export function RideRequestSheet({
 
       if (nextSeconds <= 0) {
         clearInterval(timer);
-        onExpired(request);
+        // onExpired(request);
       }
     }, 1000);
 
     return () => clearInterval(timer);
   }, [onExpired, request, requestId, visible]);
 
+  const handleAccept = async () => {
+    if (!request || !driverId) {
+      dispatch(showError({message: 'Driver not authenticated. Please log in again.'}));
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('[RideRequestSheet] Accepting ride offer:', {
+        rideId: request.rideId,
+        offerId: request.offerId,
+        driverId,
+      });
+
+      const data = await ridesApi.acceptRide(request.rideId, request.offerId, driverId);
+      console.log('[RideRequestSheet] Ride accepted successfully:', data);
+      dispatch(showSuccess({message: 'Ride accepted successfully'}));
+    } catch (error) {
+      const errorMessage = (error as any)?.message ?? 'Failed to accept ride';
+      console.error('[RideRequestSheet] Error accepting ride:', errorMessage);
+      dispatch(showError({message: errorMessage, duration: 5000}));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleSkip = async () => {
+    if (!request || !driverId) {
+      dispatch(showError({message: 'Driver not authenticated. Please log in again.'}));
+      return;
+    }
+
+    try {
+      setIsLoading(true);
+      console.log('[RideRequestSheet] Skipping ride offer:', {
+        rideId: request.rideId,
+        offerId: request.offerId,
+        driverId,
+      });
+
+      const data = await ridesApi.skipRide(request.rideId, request.offerId, driverId);
+      console.log('[RideRequestSheet] Ride skipped successfully:', data);
+    } catch (error) {
+      const errorMessage = (error as any)?.message ?? 'Failed to skip ride';
+      console.error('[RideRequestSheet] Error skipping ride:', errorMessage);
+      dispatch(showError({message: errorMessage, duration: 5000}));
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
   const countdownLabel = useMemo(() => formatSeconds(remainingSeconds), [remainingSeconds]);
+
+  // Check if we have all coordinates needed to display the map
+  const hasMapData = 
+    request && 
+    driverLocation && 
+    request.pickupCoordinates && 
+    request.destinationCoordinates;
 
   return (
     <BaseBottomSheet visible={isActive}>
@@ -90,6 +153,21 @@ export function RideRequestSheet({
             </AppText>
           </View>
         </View>
+
+        {/* Map Display - Shows route if all coordinates available */}
+        {hasMapData && request.pickupCoordinates && request.destinationCoordinates && (
+          <View style={styles.mapContainer}>
+            <UberMap
+              driverLocation={{
+                latitude: driverLocation.latitude,
+                longitude: driverLocation.longitude,
+              }}
+              pickupLocation={request.pickupCoordinates}
+              destination={request.destinationCoordinates}
+              rideStatus="incoming_request"
+            />
+          </View>
+        )}
 
         <View style={styles.infoCard}>
           <AppText variant="caption" style={styles.label}>
@@ -122,25 +200,17 @@ export function RideRequestSheet({
           <AppButton
             title="Skip"
             variant="white"
-            disabled={!request || isSubmitting}
+            disabled={!request || isLoading || isSubmitting}
             loading={false}
-            onPress={() => {
-              if (request) {
-                onSkip(request);
-              }
-            }}
+            onPress={handleSkip}
             containerStyle={styles.secondaryButton}
           />
           <AppButton
             title="Accept"
             variant="green"
-            disabled={!request || isSubmitting}
-            loading={isSubmitting}
-            onPress={() => {
-              if (request) {
-                onAccept(request);
-              }
-            }}
+            disabled={!request || isLoading || isSubmitting}
+            loading={isLoading || isSubmitting}
+            onPress={handleAccept}
             containerStyle={styles.primaryButton}
           />
         </View>
@@ -151,7 +221,8 @@ export function RideRequestSheet({
 
 const styles = StyleSheet.create({
   container: {
-    gap: 10
+    gap: 10,
+    backgroundColor: appColors.primary
   },
   dragHandle: {
     alignSelf: 'center',
@@ -184,6 +255,14 @@ const styles = StyleSheet.create({
   countdownText: {
     color: '#d1fae5',
     fontWeight: '700'
+  },
+  mapContainer: {
+    height: 280,
+    borderRadius: 14,
+    overflow: 'hidden',
+    backgroundColor: 'rgba(30, 41, 59, 0.4)',
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.45)',
   },
   infoCard: {
     borderRadius: 14,

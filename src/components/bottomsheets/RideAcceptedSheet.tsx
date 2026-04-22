@@ -1,8 +1,22 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, TouchableOpacity } from 'react-native';
-import { MapPin, Phone, Clock } from 'lucide-react-native';
-import { BaseBottomSheet } from './BaseBottomSheet';
+import { View, StyleSheet, TouchableOpacity, Linking, ActivityIndicator, Platform } from 'react-native';
+import {
+  MapPin,
+  Phone,
+  MessageCircle,
+  X,
+  CreditCard,
+  User,
+} from 'lucide-react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import axios from 'axios';
+import { AppText } from '../ui/AppText';
 import { appColors } from '../../theme/colors';
+import { BottomSheet2 } from '../../features/passenger/passengerHome/components/planner_sheets';
+import { useCalculateDistance } from '../../hooks/useCalculateDistance';
+import { useAppSelector, useAppDispatch } from '../../store/hooks';
+import { showSuccess, showError } from '../../store/toastSlice';
+import { ridesApi } from '../../api/apiClient';
 
 type RideAcceptedSheetProps = {
   visible: boolean;
@@ -14,256 +28,534 @@ type RideAcceptedSheetProps = {
     passengerPhone: string;
     estimatedPickupTime: string;
     paymentMethod: string;
+    pickupCoordinates?: {
+      latitude: number;
+      longitude: number;
+    };
+    destinationCoordinates?: {
+      latitude: number;
+      longitude: number;
+    };
   } | null;
-  onStartTrip: () => void;
-  onCancel: () => void;
+  // onStartTrip: () => Promise<void>;
+  // onCancel: () => void;
   isLoading?: boolean;
 };
 
-/**
- * Sheet displayed when driver accepts a ride and is heading to pickup location
- * Shows pickup/destination addresses, passenger info, and estimated arrival time
- */
+  const BASE_URL = Platform.select({
+  android: 'http://10.68.205.234:4000',
+  ios: 'http://localhost:4000',
+  default: 'http://10.68.205.234:4000',
+});
+
 export const RideAcceptedSheet = ({
   visible,
   ride,
-  onStartTrip,
-  onCancel,
-  isLoading = false
+  // onStartTrip,
+  // onCancel,
+  isLoading = false,
 }: RideAcceptedSheetProps) => {
-  const [showCallConfirm, setShowCallConfirm] = useState(false);
+  const [isStarting, setIsStarting] = useState(false);
+  const insets = useSafeAreaInsets();
+  const dispatch = useAppDispatch();
+  const driverLocation = useAppSelector((state) => state.driverLocation.currentLocation);
+   const driverId = useAppSelector((state) => state.auth.session?.user.id);
+ 
+
+  // Distance from pickup to destination
+  const { distanceString, timeRemaining } = useCalculateDistance(
+    ride?.pickupCoordinates,
+    ride?.destinationCoordinates
+  );
+
+  // Distance from driver location to pickup location
+  const { distanceString: driverToPickupDistance } = useCalculateDistance(
+    driverLocation,
+    ride?.pickupCoordinates
+  );
 
   if (!ride) return null;
 
+
+const handleStartTrip = async () => {
+  if(!driverId) {
+    dispatch(showError({message: 'Driver not authenticated. Please log in again.'}));
+    return;
+  }
+  try {
+    setIsStarting(true);
+    const data = await ridesApi.startTrip({
+      rideId: ride.id,
+      driverId,
+    });
+    console.log('[RideAcceptedSheet] Trip started:', data);
+    dispatch(showSuccess({message: 'Trip started successfully'}));
+    // await onStartTrip();
+  } catch (error) {
+    const errorMessage = (error as any)?.response?.data?.message ?? (error as any)?.message ?? 'Failed to start trip';
+    console.error('[RideAcceptedSheet] Error starting trip:', errorMessage);
+    dispatch(showError({message: errorMessage, duration: 5000}));
+  } finally {
+    setIsStarting(false);
+  }
+};
+
+  const handleCall = () => {
+    if (ride.passengerPhone) Linking.openURL(`tel:${ride.passengerPhone}`);
+  };
+
+  const handleMessage = () => {
+    if (ride.passengerPhone) Linking.openURL(`sms:${ride.passengerPhone}`);
+  };
+
+  const initial = ride.passengerName?.charAt(0)?.toUpperCase() ?? '?';
+  const isButtonDisabled = isStarting || isLoading;
+  const isShowingLoadingOverlay = isStarting || isLoading;
+
   return (
-    <BaseBottomSheet visible={visible}>
-      <View style={styles.container}>
-        {/* Header */}
-        <Text style={styles.title}>Ride Accepted</Text>
-        <Text style={styles.subtitle}>Head to pickup location</Text>
-
-        {/* Passenger Info */}
+    <BottomSheet2
+      visible={visible}
+      onClose={()=>{}}
+      snapPoints={[0, 180]}
+      allowSheetDrag={!isButtonDisabled}
+      showButton={true}
+      buttonType="swipe action button"
+      buttonLabel={isShowingLoadingOverlay ? 'STARTING TRIP...' : 'SWIPE TO START TRIP'}
+      onPressAction={handleStartTrip}
+      height={560}
+    >
+      <View
+        style={[
+          styles.container,
+          { paddingBottom: Math.max(16, insets.bottom + 4) },
+        ]}
+      >
+        {/* Passenger Info Header */}
         <View style={styles.passengerCard}>
-          <View>
-            <Text style={styles.passengerName}>{ride.passengerName}</Text>
-            <Text style={styles.passengerRating}>⭐ 4.8</Text>
+          <View style={styles.avatar}>
+            <AppText variant="lg" style={styles.avatarInitial}>
+              {initial}
+            </AppText>
           </View>
-          <TouchableOpacity
-            style={styles.callButton}
-            disabled={isLoading}
-            onPress={() => setShowCallConfirm(true)}
-          >
-            <Phone size={20} color={appColors.surfaceLight} />
-          </TouchableOpacity>
-        </View>
+          <View style={styles.passengerInfo}>
+            <View style={styles.nameRatingRow}>
+              <View>
+                <AppText variant="label" style={styles.passengerName}>
+                  {ride.passengerName}
+                </AppText>
+                <AppText variant="caption" style={styles.passengerHandle}>
+                  @mimi_eyo
+                </AppText>
+              </View>
 
-        {/* Locations */}
-        <View style={styles.locationsContainer}>
-          {/* Pickup */}
-          <View style={styles.locationItem}>
-            <View style={[styles.locationIcon, { backgroundColor: '#34C759' }]}>
-              <MapPin size={18} color={appColors.surfaceLight} />
+              <View style={styles.ratingBadge}>
+                <AppText variant="caption" style={styles.ratingStar}>
+                  ★
+                </AppText>
+                <AppText variant="caption" style={styles.ratingText}>
+                  4.9
+                </AppText>
+              </View>
             </View>
-            <View style={styles.locationText}>
-              <Text style={styles.locationLabel}>Pickup</Text>
-              <Text style={styles.locationAddress} numberOfLines={2}>
+
+            <View style={styles.pickupInfoSection}>
+              <AppText style={styles.pickupLabel} variant="caption">
+                Pickup Location
+              </AppText>
+              <AppText variant="caption" style={styles.pickupAddressText}>
                 {ride.pickupAddress}
-              </Text>
+              </AppText>
             </View>
           </View>
+        </View>
 
-          {/* Divider */}
-          <View style={styles.divider} />
+        {/* Ride Info & Locations Card */}
+        <View style={styles.locationsCard}>
+          <View style={styles.rideInfoHeader}>
+            <AppText variant="label" style={styles.rideInfoTitle}>
+              Ride Info
+            </AppText>
+            <AppText variant="caption" style={styles.rideInfoDistance}>
+              {/* {distanceString} ({timeRemaining}) */}
+            </AppText>
+          </View>
 
-          {/* Destination */}
-          <View style={styles.locationItem}>
-            <View style={[styles.locationIcon, { backgroundColor: '#FF3B30' }]}>
-              <MapPin size={18} color={appColors.surfaceLight} />
+          {/* Pickup Location */}
+          <View style={styles.locationRow}>
+            <View
+              style={[
+                styles.locationDot,
+                { backgroundColor: appColors.accent },
+              ]}
+            >
+              <MapPin size={14} color="#111" strokeWidth={2.5} />
             </View>
-            <View style={styles.locationText}>
-              <Text style={styles.locationLabel}>Destination</Text>
-              <Text style={styles.locationAddress} numberOfLines={2}>
+            <AppText variant="caption" style={styles.locationText}>
+              {ride.pickupAddress}
+            </AppText>
+          </View>
+
+          {/* Dashed connector */}
+          <View style={styles.dashedConnector}>
+            {[...Array(1)].map((_, i) => (
+              <View key={i} style={styles.dashSegment} />
+            ))}
+          </View>
+
+          {/* Destination Location */}
+          <View style={styles.locationRow}>
+            <View
+              style={[
+                styles.locationDot,
+                { backgroundColor: appColors.danger },
+              ]}
+            >
+              <MapPin
+                size={14}
+                color={appColors.surfaceLight}
+                strokeWidth={2.5}
+              />
+            </View>
+            <View style={styles.destinationRow}>
+              <AppText variant="caption" style={styles.locationText}>
                 {ride.destinationAddress}
-              </Text>
+              </AppText>
+              <View style={styles.timerBadge}>
+                <AppText variant="xs" style={styles.timerText}>
+                  {driverToPickupDistance}
+                </AppText>
+              </View>
             </View>
           </View>
         </View>
 
-        {/* Estimated Pickup Time */}
-        <View style={styles.estimatedContainer}>
-          <Clock size={16} color={appColors.primary} />
-          <Text style={styles.estimatedText}>
-            Pickup in {ride.estimatedPickupTime}
-          </Text>
-        </View>
+        {/* Details Grid */}
+        <View style={styles.detailsGrid}>
+          <View style={styles.detailItem}>
+            <AppText variant="xs" style={styles.detailLabel}>
+              Payment Via
+            </AppText>
+            <View style={styles.detailValueRow}>
+              <CreditCard
+                size={13}
+                color={appColors.textMuted}
+                strokeWidth={2}
+              />
+              <AppText variant="body" style={styles.detailValue}>
+                {ride.paymentMethod}
+              </AppText>
+            </View>
+          </View>
 
-        {/* Payment Method */}
-        <View style={styles.paymentContainer}>
-          <Text style={styles.paymentLabel}>Payment</Text>
-          <Text style={styles.paymentMethod}>{ride.paymentMethod}</Text>
+          <View style={styles.detailSeparator} />
+
+          <View style={styles.detailItem}>
+            <AppText variant="xs" style={styles.detailLabel}>
+              Ride For
+            </AppText>
+            <View style={styles.detailValueRow}>
+              <User size={13} color={appColors.textMuted} strokeWidth={2} />
+              <AppText variant="body" style={styles.detailValue}>
+                1 person
+              </AppText>
+            </View>
+          </View>
+
+          <View style={styles.detailSeparator} />
+
+          <View style={styles.detailItem}>
+            <AppText variant="xs" style={styles.detailLabel}>
+              Ride Fare
+            </AppText>
+            <AppText
+              variant="body"
+              style={[styles.detailValue, { color: appColors.accent }]}
+            >
+              NGN3,200
+            </AppText>
+          </View>
         </View>
 
         {/* Action Buttons */}
-        <View style={styles.buttonsContainer}>
+        <View style={styles.actionRow}>
           <TouchableOpacity
-            style={[styles.button, styles.cancelButton]}
-            disabled={isLoading}
-            onPress={onCancel}
+            style={styles.actionBtn}
+            onPress={handleCall}
+            activeOpacity={0.7}
+            disabled={isButtonDisabled}
           >
-            <Text style={styles.cancelButtonText}>Cancel</Text>
+            <Phone size={18} color={appColors.textLight} strokeWidth={2} />
+            <AppText variant="xs" style={styles.actionLabel}>
+              Call now
+            </AppText>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={[styles.button, styles.startButton, isLoading && styles.buttonDisabled]}
-            disabled={isLoading}
-            onPress={onStartTrip}
+            style={styles.actionBtn}
+            onPress={handleMessage}
+            activeOpacity={0.7}
+            disabled={isButtonDisabled}
           >
-            <Text style={styles.startButtonText}>
-              {isLoading ? 'Loading...' : 'Start Trip'}
-            </Text>
+            <MessageCircle
+              size={18}
+              color={appColors.textLight}
+              strokeWidth={2}
+            />
+            <AppText variant="xs" style={styles.actionLabel}>
+              Message
+            </AppText>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.actionBtn}
+            // onPress={onCancel}
+            disabled={isButtonDisabled}
+            activeOpacity={0.7}
+          >
+            <X size={18} color={appColors.danger} strokeWidth={2.5} />
+            <AppText
+              variant="xs"
+              style={[styles.actionLabel, { color: appColors.danger }]}
+            >
+              Cancel
+            </AppText>
           </TouchableOpacity>
         </View>
+
+        {/* Loading Overlay */}
+        {isShowingLoadingOverlay && (
+          <View style={styles.loadingOverlay}>
+            <ActivityIndicator size="large" color={appColors.accent} />
+            <AppText variant="body" style={styles.loadingText}>
+              Starting Trip...
+            </AppText>
+          </View>
+        )}
       </View>
-    </BaseBottomSheet>
+    </BottomSheet2>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: 16,
-    paddingVertical: 20,
+    gap: 10,
   },
-  title: {
-    fontSize: 18,
-    fontWeight: '700',
-    color: appColors.textDark,
-    marginBottom: 4,
-  },
-  subtitle: {
-    fontSize: 14,
-    color: appColors.textMuted,
-    marginBottom: 16,
-  },
+
+  /* ── Passenger Card ── */
   passengerCard: {
+    flexDirection: 'row',
+    gap: 12,
+    borderWidth: 1,
+    borderColor: 'teal',
+    padding: 8,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: 'rgba(100, 116, 139, 0.4)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  avatarInitial: {
+    color: appColors.textLight,
+    fontWeight: '700',
+  },
+  passengerInfo: {
+    flex: 1,
+    gap: 8,
+  },
+  nameRatingRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    backgroundColor: '#F5F5F5',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
   },
   passengerName: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: appColors.textDark,
-    marginBottom: 4,
+    color: appColors.textLight,
   },
-  passengerRating: {
-    fontSize: 13,
+  passengerHandle: {
     color: appColors.textMuted,
   },
-  callButton: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: appColors.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  locationsContainer: {
-    backgroundColor: '#F9F9F9',
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-  },
-  locationItem: {
+  ratingBadge: {
     flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: 'rgba(6, 78, 59, 0.6)',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  ratingStar: {
+    color: '#f9a825',
+    fontSize: 12,
+  },
+  ratingText: {
+    color: appColors.textLight,
+    fontWeight: '600',
+  },
+  pickupInfoSection: {
+    gap: 4,
+  },
+  pickupLabel: {
+    color: '#FFFFFF',
+    opacity: 0.7,
+  },
+  pickupAddressText: {
+    color: '#FFFFFF',
+  },
+
+  /* ── Ride Info Header ── */
+  rideInfoHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     marginBottom: 8,
   },
-  locationIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+  rideInfoTitle: {
+    color: appColors.textLight,
+    fontSize: 16,
+  },
+  rideInfoDistance: {
+    color: appColors.accent,
+    fontWeight: '700',
+  },
+
+  /* ── Locations Card ── */
+  locationsCard: {
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.45)',
+    padding: 12,
+    borderRadius: 12,
+  },
+  locationRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 10,
+  },
+  locationDot: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
     justifyContent: 'center',
     alignItems: 'center',
-    marginRight: 12,
+    flexShrink: 0,
+    marginTop: 2,
   },
   locationText: {
     flex: 1,
-  },
-  locationLabel: {
-    fontSize: 12,
-    color: appColors.textMuted,
-    marginBottom: 2,
-  },
-  locationAddress: {
-    fontSize: 14,
-    fontWeight: '500',
-    color: appColors.textDark,
+    color: appColors.textLight,
     lineHeight: 20,
+    paddingTop: 6,
   },
-  divider: {
-    height: 1,
-    backgroundColor: '#E5E5E5',
-    marginVertical: 8,
-  },
-  estimatedContainer: {
+  destinationRow: {
+    flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: '#EBF7FF',
-    borderRadius: 8,
-    padding: 10,
-    marginBottom: 12,
+    gap: 8,
   },
-  estimatedText: {
-    fontSize: 13,
-    fontWeight: '500',
-    color: appColors.primary,
-    marginLeft: 8,
+  dashedConnector: {
+    flexDirection: 'column',
+    gap: 3,
+    marginLeft: 16,
+    marginVertical: 6,
   },
-  paymentContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    paddingVertical: 8,
-    marginBottom: 16,
+  dashSegment: {
+    width: 2,
+    height: 4,
+    backgroundColor: 'rgba(100, 116, 139, 0.5)',
+    borderRadius: 1,
   },
-  paymentLabel: {
-    fontSize: 13,
-    color: appColors.textMuted,
+  timerBadge: {
+    backgroundColor: 'rgba(15, 23, 42, 0.9)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 3,
   },
-  paymentMethod: {
-    fontSize: 13,
+  timerText: {
+    color: appColors.textLight,
     fontWeight: '600',
-    color: appColors.textDark,
   },
-  buttonsContainer: {
+
+  /* ── Details Grid ── */
+  detailsGrid: {
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.45)',
+    padding: 12,
     flexDirection: 'row',
-    gap: 12,
+    alignItems: 'center',
+    gap: 0,
+    borderRadius: 12,
   },
-  button: {
+  detailItem: {
     flex: 1,
-    paddingVertical: 14,
-    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 4,
+  },
+  detailLabel: {
+    color: appColors.textMuted,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.2,
+    fontSize: 10,
+  },
+  detailValueRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  detailValue: {
+    color: appColors.textLight,
+    fontWeight: '600',
+  },
+  detailSeparator: {
+    width: 1,
+    height: 32,
+    backgroundColor: 'rgba(100, 116, 139, 0.45)',
+  },
+
+  /* ── Action Buttons ── */
+  actionRow: {
+    flexDirection: 'row',
+    gap: 8,
+    paddingHorizontal: 8,
+  },
+  actionBtn: {
+    flex: 1,
+    flexDirection: 'row',
+    backgroundColor: 'rgba(100, 116, 139, 0.2)',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(100, 116, 139, 0.45)',
+    paddingVertical: 8,
+    paddingHorizontal: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+  actionLabel: {
+    color: appColors.textLight,
+    fontWeight: '600',
+  },
+
+  /* ── Loading Overlay ── */
+  loadingOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(15, 23, 42, 0.85)',
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 16,
+    borderRadius: 12,
   },
-  cancelButton: {
-    backgroundColor: '#F0F0F0',
-  },
-  cancelButtonText: {
-    fontSize: 15,
+  loadingText: {
+    color: appColors.accent,
     fontWeight: '600',
-    color: appColors.textDark,
-  },
-  startButton: {
-    backgroundColor: appColors.primary,
-  },
-  startButtonText: {
-    fontSize: 15,
-    fontWeight: '600',
-    color: appColors.surfaceLight,
-  },
-  buttonDisabled: {
-    opacity: 0.6,
+    fontSize: 14,
   },
 });

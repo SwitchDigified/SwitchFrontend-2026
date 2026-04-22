@@ -13,7 +13,7 @@ This is a comprehensive bottom sheet system for managing the entire driver ride 
    - Shows: Pickup/destination addresses, countdown timer
    - Actions: Skip, Accept
 
-2. **RideAcceptedSheet** - Driver accepted ride, heading to pickup
+2. **c** - Driver accepted ride, heading to pickup
    - Status: `accepted`
    - Shows: Passenger info, pickup location, ETA
    - Actions: Start Trip, Cancel

@@ -15,6 +15,53 @@ import { encodeGeohash } from '../utils/geohash';
 
 const PASSENGER_LOCATIONS_COLLECTION = 'passenger_locations';
 
+const isFiniteNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
+
+const requirePassengerId = (passengerId: string): string => {
+  const normalizedPassengerId = passengerId.trim();
+  if (!normalizedPassengerId) {
+    throw new Error('Cannot sync passenger location without a valid passenger id');
+  }
+  return normalizedPassengerId;
+};
+
+const sanitizePassengerPayload = (payload: PassengerLocationPayload): PassengerLocationPayload => {
+  const sanitized: PassengerLocationPayload = {
+    passengerId: payload.passengerId,
+    isOnline: payload.isOnline,
+    isWaitingForRide: payload.isWaitingForRide,
+    activeRideId: payload.activeRideId ?? null,
+    updatedAt: payload.updatedAt,
+  };
+
+  if (isFiniteNumber(payload.latitude)) {
+    sanitized.latitude = payload.latitude;
+  }
+
+  if (isFiniteNumber(payload.longitude)) {
+    sanitized.longitude = payload.longitude;
+  }
+
+  if (typeof payload.geohash === 'string' && payload.geohash.trim().length > 0) {
+    sanitized.geohash = payload.geohash;
+  }
+
+  if (payload.heading === null || isFiniteNumber(payload.heading)) {
+    sanitized.heading = payload.heading ?? null;
+  }
+
+  if (payload.speed === null || isFiniteNumber(payload.speed)) {
+    sanitized.speed = payload.speed ?? null;
+  }
+
+  if (payload.accuracy === null || isFiniteNumber(payload.accuracy)) {
+    sanitized.accuracy = payload.accuracy ?? null;
+  }
+
+  return sanitized;
+};
+
 /**
  * Syncs passenger online/waiting status to passenger_locations
  * Called when passenger goes online/offline or starts/stops waiting
@@ -28,12 +75,13 @@ export const syncPassengerPresence = async (payload: {
   location?: PassengerLiveLocation | null;
 }): Promise<void> => {
   try {
+    const passengerId = requirePassengerId(payload.passengerId);
     const passengerLocationRef = firestore()
       .collection(PASSENGER_LOCATIONS_COLLECTION)
-      .doc(payload.passengerId);
+      .doc(passengerId);
 
     const firestorePayload = buildPassengerLocationPayload({
-      passengerId: payload.passengerId,
+      passengerId,
       isOnline: payload.isOnline,
       isWaitingForRide: payload.isWaitingForRide,
       activeRideId: payload.activeRideId,
@@ -41,7 +89,7 @@ export const syncPassengerPresence = async (payload: {
       location: payload.location,
     });
 
-    await passengerLocationRef.set(firestorePayload, { merge: true });
+    await passengerLocationRef.set(sanitizePassengerPayload(firestorePayload), { merge: true });
   } catch (error) {
     console.error('Error syncing passenger presence:', error);
     throw error;
@@ -58,27 +106,35 @@ export const syncPassengerLiveLocation = async (
   geohash?: string
 ): Promise<void> => {
   try {
+    const safePassengerId = requirePassengerId(passengerId);
+    const latitude = geolocation.coords.latitude;
+    const longitude = geolocation.coords.longitude;
+
+    if (!isFiniteNumber(latitude) || !isFiniteNumber(longitude)) {
+      throw new Error('Passenger location update skipped due to invalid coordinates');
+    }
+
     const passengerLocationRef = firestore()
       .collection(PASSENGER_LOCATIONS_COLLECTION)
-      .doc(passengerId);
+      .doc(safePassengerId);
 
     const geohashValue = geohash || encodeGeohash(
-      geolocation.coords.latitude,
-      geolocation.coords.longitude
+      latitude,
+      longitude
     );
 
     const location: PassengerLiveLocation = {
-      latitude: geolocation.coords.latitude,
-      longitude: geolocation.coords.longitude,
+      latitude,
+      longitude,
       geohash: geohashValue,
-      heading: geolocation.coords.heading ?? null,
-      speed: geolocation.coords.speed ?? null,
-      accuracy: geolocation.coords.accuracy ?? null,
+      heading: isFiniteNumber(geolocation.coords.heading) ? geolocation.coords.heading : null,
+      speed: isFiniteNumber(geolocation.coords.speed) ? geolocation.coords.speed : null,
+      accuracy: isFiniteNumber(geolocation.coords.accuracy) ? geolocation.coords.accuracy : null,
       updatedAt: new Date().toISOString(),
     };
 
     const payload = buildPassengerLocationPayload({
-      passengerId,
+      passengerId: safePassengerId,
       isOnline: true,
       isWaitingForRide: false,
       activeRideId: null,
@@ -86,7 +142,7 @@ export const syncPassengerLiveLocation = async (
       location,
     });
 
-    await passengerLocationRef.set(payload, { merge: true });
+    await passengerLocationRef.set(sanitizePassengerPayload(payload), { merge: true });
   } catch (error) {
     console.error('Error syncing passenger live location:', error);
     throw error;
@@ -101,9 +157,10 @@ export const setPassengerOfflineState = async (
   passengerId: string
 ): Promise<void> => {
   try {
+    const safePassengerId = requirePassengerId(passengerId);
     const passengerLocationRef = firestore()
       .collection(PASSENGER_LOCATIONS_COLLECTION)
-      .doc(passengerId);
+      .doc(safePassengerId);
 
     await passengerLocationRef.update({
       isOnline: false,
@@ -128,9 +185,10 @@ export const updatePassengerRideStatus = async (
   activeRideId: string | null
 ): Promise<void> => {
   try {
+    const safePassengerId = requirePassengerId(passengerId);
     const passengerLocationRef = firestore()
       .collection(PASSENGER_LOCATIONS_COLLECTION)
-      .doc(passengerId);
+      .doc(safePassengerId);
 
     await passengerLocationRef.update({
       isWaitingForRide,
@@ -152,19 +210,20 @@ export const createInitialPassengerLocationDoc = async (
   updatedAt: string
 ): Promise<void> => {
   try {
+    const safePassengerId = requirePassengerId(passengerId);
     const passengerLocationRef = firestore()
       .collection(PASSENGER_LOCATIONS_COLLECTION)
-      .doc(passengerId);
+      .doc(safePassengerId);
 
     const initialPayload: PassengerLocationPayload = {
-      passengerId,
+      passengerId: safePassengerId,
       isOnline: false,
       isWaitingForRide: false,
       activeRideId: null,
       updatedAt,
     };
 
-    await passengerLocationRef.set(initialPayload);
+    await passengerLocationRef.set(sanitizePassengerPayload(initialPayload));
   } catch (error) {
     console.error('Error creating initial passenger location document:', error);
     throw error;
@@ -179,9 +238,10 @@ export const getPassengerLocation = async (
   passengerId: string
 ): Promise<PassengerLocationPayload | null> => {
   try {
+    const safePassengerId = requirePassengerId(passengerId);
     const snapshot = await firestore()
       .collection(PASSENGER_LOCATIONS_COLLECTION)
-      .doc(passengerId)
+      .doc(safePassengerId)
       .get();
 
     if (!snapshot.exists) {

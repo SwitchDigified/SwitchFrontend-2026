@@ -2,6 +2,14 @@ import { createSlice, PayloadAction } from '@reduxjs/toolkit';
 import type { RideStatus } from '../types/ride';
 
 /**
+ * Ride location coordinates
+ */
+export type RideCoordinates = {
+  latitude: number;
+  longitude: number;
+};
+
+/**
  * Current active ride information displayed in bottom sheets
  * Tracks both ride request state and full ride lifecycle
  */
@@ -12,7 +20,9 @@ export type DriverCurrentRide = {
   passengerName: string;
   passengerPhone?: string;
   pickupAddress: string;
+  pickupCoordinates?: RideCoordinates;
   destinationAddress: string;
+  destinationCoordinates?: RideCoordinates;
   paymentMethod?: string;
   estimatedPickupTime?: string; // For 'accepted' status
   estimatedTimeRemaining?: string; // For 'on_trip' status
@@ -73,7 +83,7 @@ const driverCurrentRideSlice = createSlice({
     },
 
     /**
-     * Update estimated values for en_route status
+     * Update estimated values for on_trip status
      */
     updateRideEstimates(
       state,

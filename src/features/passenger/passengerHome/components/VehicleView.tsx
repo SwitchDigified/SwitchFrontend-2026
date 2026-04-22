@@ -1,10 +1,15 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { ChevronDown, MapPin, X } from 'lucide-react-native';
-import { Pressable, Text, View } from 'react-native';
+import { Pressable, View } from 'react-native';
 
 import { AppButton } from '../../../../components/ui/AppButton';
 import { AppText } from '../../../../components/ui/AppText';
-import type { RideLocation, RideType } from '../../../../types/ride';
+import { ridesApi } from '../../../../api/apiClient';
+import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
+import { updatePassengerRideState } from '../../../../store/authSlice';
+import { setRide } from '../../../../store/rideSlice';
+import { showError, showSuccess } from '../../../../store/toastSlice';
+import type { CreateRideRequestPayload, RideLocation, RideType } from '../../../../types/ride';
 import { DESTINATION_PLACES, PAYMENT_OPTIONS, VEHICLE_OPTIONS } from '../constants';
 import { styles } from '../styles';
 
@@ -45,6 +50,102 @@ export function VehicleView({
   onFindDriver,
   canFindDriver,
 }: VehicleViewProps) {
+
+    const dispatch = useAppDispatch();
+    const sessionUser = useAppSelector((state) => state.auth.session?.user);
+    const {
+      pickupLocation,
+      destinationLocation,
+      scheduleType,
+      scheduledPickupAt,
+      latestRide,
+    } = useAppSelector((state) => state.ride);
+    const [isCreating, setIsCreating] = useState(false);
+
+    const sanitizeRideLocation = (location: RideLocation): RideLocation => {
+      const sanitizedPlaceId =
+        typeof location.placeId === 'string' && location.placeId.trim().length > 0
+          ? location.placeId.trim()
+          : undefined;
+
+      return {
+        address: location.address,
+        ...(sanitizedPlaceId ? { placeId: sanitizedPlaceId } : {}),
+        coordinates: location.coordinates,
+      };
+    };
+  
+  const createRide = async () => {
+      if (!sessionUser || sessionUser.role !== 'passenger') {
+        dispatch(showError({ message: 'Only an authenticated passenger can request a ride.' }));
+        return;
+      }
+
+      if (!pickupLocation) {
+        dispatch(showError({ message: 'Select your pickup location to continue.' }));
+        return;
+      }
+
+      if (!destinationLocation) {
+        dispatch(showError({ message: 'Select your destination to continue.' }));
+        return;
+      }
+
+      const schedule: CreateRideRequestPayload['schedule'] =
+        scheduleType === 'later'
+          ? {
+              type: 'later',
+              pickupAt:
+                scheduledPickupAt ?? new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            }
+          : { type: 'now' };
+
+      const payload: CreateRideRequestPayload = {
+        passengerId: sessionUser.id,
+        rideType,
+        pickupLocation: sanitizeRideLocation(pickupLocation),
+        stopLocation: stopLocation ? sanitizeRideLocation(stopLocation) : undefined,
+        destinationLocation: sanitizeRideLocation(destinationLocation),
+        paymentMethod,
+        rider: {
+          id: sessionUser.id,
+          firstName: sessionUser.firstName,
+          lastName: sessionUser.lastName,
+          phone: sessionUser.phone,
+          email: sessionUser.email,
+        },
+        driver: null,
+        schedule,
+        currentRideStatus: latestRide?.status ?? null,
+      };
+
+      try {
+        setIsCreating(true);
+        const rideResponse = await ridesApi.createRideRequest(payload);
+        const ride = (rideResponse as { data?: any })?.data ?? rideResponse;
+        dispatch(setRide(ride));
+        dispatch(
+          updatePassengerRideState({
+            rideStatus: 'requested',
+            activeRideId: ride.id,
+          })
+        );
+        dispatch(showSuccess({ message: 'Ride request created. Finding a driver...' }));
+        onFindDriver();
+      } catch (error) {
+        const errorMessage =
+          (error as any)?.response?.data?.message ??
+          (error as any)?.message ??
+          'Failed to request a ride';
+        console.error('[VehicleView] Error creating ride request:', errorMessage);
+        dispatch(showError({ message: errorMessage, duration: 5000 }));
+      } finally {
+        setIsCreating(false);
+      }
+  };
+
+    const isRequesting = requestStatus === 'loading' || isCreating;
+
   return (
     <View style={{padding:16, gap:2}}>
 
@@ -227,10 +328,10 @@ export function VehicleView({
       </View>
 
       <AppButton
-        title={requestStatus === 'loading' ? 'Finding driver...' : 'Find Driver'}
+          title={isRequesting ? 'Requesting a ride...' : 'Request Ride'}
         variant="ghost"
-        onPress={onFindDriver}
-        loading={requestStatus === 'loading'}
+        onPress={createRide}
+          loading={isRequesting}
         disabled={!canFindDriver}
         style={styles.findDriverButton}
       />

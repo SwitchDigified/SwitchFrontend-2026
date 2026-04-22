@@ -10,7 +10,7 @@ export type FlowScreen =
   | 'finding'
   | 'accepted'
   | 'arrived'
-  | 'en_route';
+  | 'on_trip';
 
 export type PassengerHomeIcon = React.ComponentType<{
   size?: number;
