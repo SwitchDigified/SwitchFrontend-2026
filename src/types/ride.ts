@@ -1,7 +1,8 @@
 export type RideType = 'single' | 'shared';
-export type RideStatus =  'idle' | 'requested' | 'accepted' | 'arrived' | 'on_trip' | 'completed' | 'cancelled';
+export type RideStatus =  'idle' | 'requested' | 'accepted' | 'arrived' | 'on_trip' | 'completed' | 'cancelled' | 'exhausted';
 export type RideScheduleType = 'now' | 'later';
 export type RideCancelledBy = 'passenger' | 'driver' | null;
+export type RidePaymentMethod = 'cash' | 'card' | 'wallet' | (string & {});
 
 export type RideCoordinates = {
   latitude: number;
@@ -19,20 +20,23 @@ export type RideSchedule = {
   pickupAt?: string;
 };
 
-export type RideParticipantRider = {
+export type RideParticipantRatings = {
+  average: number;
+  count: number;
+};
+
+type RideParticipantBase = {
   id: string;
   firstName: string;
   lastName: string;
   phone: string;
   email: string;
+  profilePhotoUrl?: string | null;
+  ratings?: RideParticipantRatings | null;
 };
 
-export type RideParticipantDriver = {
-  id: string;
-  firstName: string;
-  lastName: string;
-  phone: string;
-};
+export type RideParticipantRider = RideParticipantBase;
+export type RideParticipantDriver = RideParticipantBase;
 
 export type RideMatchingData = {
   pickupLocation: RideLocation | null;
@@ -40,7 +44,7 @@ export type RideMatchingData = {
   destinationLocation: RideLocation | null;
   rideType: RideType;
   scheduleType: RideScheduleType;
-  paymentMethod: string;
+  paymentMethod: RidePaymentMethod;
   cancelBy: RideCancelledBy;
   rider: RideParticipantRider;
   driver: RideParticipantDriver | null;
@@ -52,7 +56,8 @@ export type CreateRideRequestPayload = {
   pickupLocation: RideLocation;
   stopLocation?: RideLocation;
   destinationLocation: RideLocation;
-  paymentMethod: string;
+  paymentMethod: RidePaymentMethod;
+  price?: string;
   rider: RideParticipantRider;
   driver: RideParticipantDriver | null;
   schedule: RideSchedule;
@@ -68,7 +73,8 @@ export type RideRequest = {
   pickupLocation: RideLocation;
   stopLocation?: RideLocation;
   destinationLocation: RideLocation;
-  paymentMethod: string;
+  paymentMethod: RidePaymentMethod;
+  price?: string;
   rider: RideParticipantRider;
   driver: RideParticipantDriver | null;
   schedule: RideSchedule;

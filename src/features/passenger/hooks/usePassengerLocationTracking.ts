@@ -184,7 +184,7 @@ export function usePassengerLocationTracking() {
       const newLocation = buildPassengerLiveLocation(position);
       if (!newLocation) {
         if (__DEV__) {
-          console.log('[PassengerLocation] Ignored geolocation update with invalid coordinates');
+
         }
         return;
       }

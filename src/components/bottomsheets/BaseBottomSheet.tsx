@@ -6,7 +6,10 @@ import {
   StyleProp,
   StyleSheet,
   View,
-  ViewStyle
+  ViewStyle,
+  PanResponder,
+  GestureResponderEvent,
+  PanResponderGestureState
 } from 'react-native';
 
 import { appColors } from '../../theme/colors';
@@ -16,39 +19,91 @@ type BaseBottomSheetProps = {
   onBackdropPress?: () => void;
   children: React.ReactNode;
   contentStyle?: StyleProp<ViewStyle>;
+  snapPoints?: number[];
 };
 
 export function BaseBottomSheet({
   visible,
   onBackdropPress,
   children,
-  contentStyle
+  contentStyle,
+  snapPoints = [0]
 }: BaseBottomSheetProps) {
   const translateY = useRef(new Animated.Value(24)).current;
   const opacity = useRef(new Animated.Value(0)).current;
+  const dragOffset = useRef(0);
+
+  // Create PanResponder for drag handling
+  const panResponder = useRef(
+    PanResponder.create({
+      onStartShouldSetPanResponder: () => true,
+      onMoveShouldSetPanResponder: (evt, gestureState) => {
+        // Only allow vertical dragging
+        return Math.abs(gestureState.dy) > Math.abs(gestureState.dx);
+      },
+      onPanResponderMove: (evt, gestureState) => {
+        // Allow dragging down (positive values) but keep it constrained
+        const newOffset = Math.max(0, gestureState.dy);
+        dragOffset.current = newOffset;
+        translateY.setValue(newOffset);
+      },
+      onPanResponderRelease: (evt, gestureState) => {
+        const { dy } = gestureState;
+        const closestSnapPoint = snapPoints.reduce((prev, curr) => {
+          return (Math.abs(curr - dy) < Math.abs(prev - dy) ? curr : prev);
+        });
+
+        Animated.spring(translateY, {
+          toValue: closestSnapPoint,
+          tension: 80,
+          friction: 20,
+          useNativeDriver: true
+        }).start();
+      }
+    })
+  ).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(translateY, {
-        toValue: visible ? 0 : 24,
-        duration: 220,
-        useNativeDriver: true
-      }),
-      Animated.timing(opacity, {
-        toValue: visible ? 1 : 0,
-        duration: 220,
-        useNativeDriver: true
-      })
-    ]).start();
+    if (!visible) {
+      Animated.parallel([
+        Animated.timing(translateY, {
+          toValue: 24,
+          duration: 220,
+          useNativeDriver: true
+        }),
+        Animated.timing(opacity, {
+          toValue: 0,
+          duration: 220,
+          useNativeDriver: true
+        })
+      ]).start();
+    } else {
+      // Reset drag offset when opening
+      dragOffset.current = 0;
+      Animated.parallel([
+        Animated.spring(translateY, {
+          toValue: 0,
+          tension: 80,
+          friction: 20,
+          useNativeDriver: true
+        }),
+        Animated.timing(opacity, {
+          toValue: 1,
+          duration: 220,
+          useNativeDriver: true
+        })
+      ]).start();
+    }
   }, [opacity, translateY, visible]);
 
   return (
     <Modal transparent visible={visible} animationType="none" onRequestClose={onBackdropPress}>
-      <View style={styles.root}>
-        <Animated.View style={[styles.backdrop, { opacity }]}>
+      <View style={styles.root} pointerEvents="box-none">
+        <Animated.View style={[styles.backdrop, { opacity }]} pointerEvents="none">
           <Pressable style={StyleSheet.absoluteFill} onPress={onBackdropPress} />
         </Animated.View>
         <Animated.View
+          {...panResponder.panHandlers}
           style={[
             styles.sheet,
             contentStyle,
@@ -71,8 +126,8 @@ const styles = StyleSheet.create({
 
   },
   backdrop: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: 'rgba(2, 6, 23, 0.55)'
+    // ...StyleSheet.absoluteFillObject,
+    // backgroundColor: 'rgba(2, 6, 23, 0.55)'
   },
   sheet: {
     borderTopLeftRadius: 22,

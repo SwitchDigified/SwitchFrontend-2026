@@ -1,33 +1,56 @@
 import React, { useCallback, useMemo, useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, StatusBar, StyleSheet, View } from 'react-native';
-import { Menu, Shield, X } from 'lucide-react-native';
+import { ActivityIndicator, Linking, Modal, Pressable, StatusBar, StyleSheet, View } from 'react-native';
+import { Shield, X } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import MapView, { Marker } from 'react-native-maps';
 
 import { AppText } from '../../../components/ui/AppText';
-import { DriverRideMap } from '../../../components/maps';
+import { DriverRideMap, DriverOnlyMap } from '../../../components/maps';
 import { GOOGLE_MAPS_DIRECTIONS_API_KEY } from '../../../config/api';
 import { useAppDispatch, useAppSelector } from '../../../store/hooks';
 import { logout } from '../../../store/authSlice';
 import { setDriverId, setDriverOnlineState, setDriverAvailableState } from '../../../store/driverLocationSlice';
+import { dismissCurrentDriverRideRequest } from '../../../store/driverRideRequestSlice';
 import type { DriverUser } from '../../../types/auth';
 import { DriverDrawer } from '../components/DriverDrawer';
+import { DriverHeaderBanner } from '../components/DriverHeaderBanner';
 import { DUMMY_DESTINATION, DUMMY_DRIVER_LOCATION, DUMMY_PICKUP_LOCATION, RideStatus, UberMap } from '../map';
 import { useLocationTracking } from '../../../hooks/Uselocationtracking';
+import { useCalculateDistance } from '../../../hooks/useCalculateDistance';
 import { useFcmTokenSync } from '../hooks/useFcmTokenSync';
-import { syncDriverPresence, setDriverOfflineState, toggleDriverOnlineStatus } from '../../../services/driverLocationService';
+import { syncDriverPresence, setDriverOfflineState, toggleDriverOnlineStatus, toggleDriverOnlineAndAvailableStatus } from '../../../services/driverLocationService';
 import { listenToDriverLocation } from '../../../listeners/driverLocationListener';
 
 type DriverHomeScreenProps = {
   onNavigateToProfileSetup?: () => void;
 };
 
+const hasText = (value: unknown): boolean => typeof value === 'string' && value.trim().length > 0;
+
 const isDriverProfileComplete = (driver: DriverUser | null): boolean => {
   if (!driver) {
     return false;
   }
 
-  return Boolean(driver.basicProfile && driver.vehicleDetails && driver.preference);
+  const basicProfileComplete = Boolean(
+    driver.basicProfile &&
+      hasText(driver.basicProfile.idNumber) &&
+      hasText(driver.basicProfile.driverLicenseUrl) &&
+      hasText(driver.basicProfile.profilePhotoUrl) &&
+      hasText(driver.basicProfile.ninSlipUrl)
+  );
+
+  const vehicleDetailsComplete = Boolean(
+    driver.vehicleDetails &&
+      hasText(driver.vehicleDetails.make) &&
+      hasText(driver.vehicleDetails.model) &&
+      hasText(driver.vehicleDetails.color) &&
+      hasText(driver.vehicleDetails.plateNumber)
+  );
+
+  const preferenceComplete = Boolean(driver.preference && hasText(driver.preference.earningPreference));
+
+  return basicProfileComplete && vehicleDetailsComplete && preferenceComplete;
 };
 
 export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenProps) {
@@ -36,12 +59,12 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
   const bottomTrayPaddingBottom = Math.max(12, insets.bottom + 8);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [showProfileSetupModal, setShowProfileSetupModal] = useState(false);
-  const [isOnline, setIsOnline] = useState(false);
   const [isTogglingOnline, setIsTogglingOnline] = useState(false);
   const [rideRequest, setRideRequest] = useState<any>(null);
 
   const driverData = useAppSelector((state) => state.auth.session?.user ?? null);
   const currentRide = useAppSelector((state) => state.driverCurrentRide.currentRide);
+  const currentRideRequest = useAppSelector((state) => state.driverRideRequest.currentRequest);
   const driverLocationState = useAppSelector((state) => state.driverLocation);
 
   const driverProfile = useMemo(() => {
@@ -71,11 +94,8 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
   // Set up real-time Firestore listener for driver location changes
   React.useEffect(() => {
     if (!driverLocationState.driverId) {
-      console.log('[DriverHomeScreen] Skipping listener setup - no driverId in Redux yet');
       return;
     }
-
-    console.log('[DriverHomeScreen] Setting up driver location listener:', driverLocationState.driverId);
 
     const unsubscribe = listenToDriverLocation(
       driverLocationState.driverId,
@@ -90,7 +110,7 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
 
     // Cleanup: unsubscribe from listener when component unmounts or driverId changes
     return () => {
-      console.log('[DriverHomeScreen] Cleaning up driver location listener');
+
       unsubscribe();
     };
   }, [driverLocationState.driverId, dispatch]);
@@ -116,8 +136,7 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
     distanceThreshold: 2,
     onLocationChange: (state) => {
       if (state.coords && state.geohash) {
-        console.log(`Location updated: ${state.geohash}`);
-        console.log(`Accuracy: ${state.coords.accuracy}m`);
+        // Location updated
       }
     },
     onError: (error) => {
@@ -127,13 +146,9 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
 
   // Automatically start/stop location tracking based on online status
   React.useEffect(() => {
-    console.log('[DriverHomeScreen] Online status changed:', driverLocationState.isOnline);
-    
     if (driverLocationState.isOnline) {
-      console.log('[DriverHomeScreen] Driver is online - starting location tracking');
       driverLocation.startTracking();
     } else {
-      console.log('[DriverHomeScreen] Driver is offline - stopping location tracking');
       driverLocation.stopTracking();
     }
   }, [driverLocationState.isOnline, driverLocation]);
@@ -150,11 +165,8 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
   }, [driverLocationState.isOnline]);
 
   const onLogout = useCallback(async () => {
-    console.log('[DriverHomeScreen] Logging out');
-    
     if (driverProfile?.id && driverLocationState.isOnline) {
       try {
-        console.log('[DriverHomeScreen] Setting driver offline on logout');
         // Sync offline state to Firestore
         await setDriverOfflineState(driverProfile.id, driverLocationState.currentLocation ?? undefined);
       } catch (error) {
@@ -187,78 +199,184 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
     return (statusMap[currentRide.status] || 'incoming_request') as RideStatus;
   }, [currentRide?.status]);
 
+  const hasRideRequest = Boolean(!currentRide && (currentRideRequest || rideRequest));
+  const shouldRenderHeaderBanner =
+    !currentRide || currentRide?.status === 'accepted' || currentRide?.status === 'on_trip';
+  const showAcceptedRideBanner = currentRide?.status === 'accepted';
+  const showOnTripBanner = currentRide?.status === 'on_trip';
+
+  const { distanceString: pickupDistanceText, timeRemaining: pickupEtaText } = useCalculateDistance(
+    driverLocation.coords
+      ? {
+          latitude: driverLocation.coords.latitude,
+          longitude: driverLocation.coords.longitude,
+        }
+      : undefined,
+    currentRide?.pickupLocation?.coordinates,
+  );
+  const { distanceString: destinationDistanceText, timeRemaining: destinationEtaText } = useCalculateDistance(
+    driverLocation.coords
+      ? {
+          latitude: driverLocation.coords.latitude,
+          longitude: driverLocation.coords.longitude,
+        }
+      : undefined,
+    currentRide?.destinationLocation?.coordinates,
+  );
+
+  const handleCancelRideRequest = useCallback(() => {
+    if (currentRideRequest?.offerId) {
+      dispatch(dismissCurrentDriverRideRequest({ offerId: currentRideRequest.offerId }));
+    }
+
+    if (rideRequest) {
+      setRideRequest(null);
+    }
+  }, [dispatch, currentRideRequest?.offerId, rideRequest]);
+
+  const handleNavigateToPickup = useCallback(() => {
+    if (!driverLocation.coords || !currentRide?.pickupLocation?.coordinates) {
+      return;
+    }
+
+    const originLat = driverLocation.coords.latitude;
+    const originLng = driverLocation.coords.longitude;
+    const destLat = currentRide.pickupLocation.coordinates.latitude;
+    const destLng = currentRide.pickupLocation.coordinates.longitude;
+
+    const googleMapsUrl = `https://www.google.com/maps/dir/${originLat},${originLng}/${destLat},${destLng}?travelmode=driving`;
+    Linking.openURL(googleMapsUrl).catch((error) => {
+      console.error('[DriverHomeScreen] Error opening Google Maps for pickup:', error);
+    });
+  }, [driverLocation.coords, currentRide?.pickupLocation?.coordinates]);
+
+  const handleNavigateToDestination = useCallback(() => {
+    if (!currentRide?.destinationLocation?.coordinates) {
+      return;
+    }
+
+    // Match UberMap on_trip behavior: navigate from pickup -> destination.
+    // Fallback to current driver location only if pickup coordinates are missing.
+    const originLat =
+      currentRide.pickupLocation?.coordinates?.latitude ?? driverLocation.coords?.latitude;
+    const originLng =
+      currentRide.pickupLocation?.coordinates?.longitude ?? driverLocation.coords?.longitude;
+    const destLat = currentRide.destinationLocation.coordinates.latitude;
+    const destLng = currentRide.destinationLocation.coordinates.longitude;
+
+    if (
+      typeof originLat !== 'number' ||
+      typeof originLng !== 'number' ||
+      Number.isNaN(originLat) ||
+      Number.isNaN(originLng)
+    ) {
+      return;
+    }
+
+    const googleMapsUrl = `https://www.google.com/maps/dir/${originLat},${originLng}/${destLat},${destLng}?travelmode=driving`;
+    Linking.openURL(googleMapsUrl).catch((error) => {
+      console.error('[DriverHomeScreen] Error opening Google Maps for destination:', error);
+    });
+  }, [
+    driverLocation.coords?.latitude,
+    driverLocation.coords?.longitude,
+    currentRide?.pickupLocation?.coordinates?.latitude,
+    currentRide?.pickupLocation?.coordinates?.longitude,
+    currentRide?.destinationLocation?.coordinates?.latitude,
+    currentRide?.destinationLocation?.coordinates?.longitude,
+  ]);
+
   if (!driverData) {
     return null;
   }
 
-  console.log('[DriverHomeScreen] Render state:', {
-    isTracking: driverLocation.isTracking,
-    driverCoords: driverLocation.coords ? { lat: driverLocation.coords.latitude, lng: driverLocation.coords.longitude } : null,
-    isOnline: driverLocationState.isOnline,
-    isAvailable: driverLocationState.isAvailable,
-    activeRideId: driverLocationState.activeRideId,
-    currentRide: currentRide?.id,
-    error: driverLocation.error?.message
-  });
+  // console.log('[DriverHomeScreen] Render state:', {
+  //   isTracking: driverLocation.isTracking,
+  //   driverCoords: driverLocation.coords ? { lat: driverLocation.coords.latitude, lng: driverLocation.coords.longitude } : null,
+  //   isOnline: driverLocationState.isOnline,
+  //   isAvailable: driverLocationState.isAvailable,
+  //   activeRideId: driverLocationState.activeRideId,
+  //   currentRide: currentRide?.id,
+  //   error: driverLocation.error?.message
+  // });
+  // console.log("currentRide>>", currentRide)
+  // console.log("currentRideRequest>>", currentRideRequest)
   return (
     <View style={styles.screen}>
       <StatusBar barStyle="light-content" backgroundColor="#0a1117" />
-      {/* <View style={styles.mapWrapper}> */}
-        {driverLocation.coords && currentRide?.pickupCoordinates && currentRide?.destinationCoordinates ? (
-          <UberMap
-            driverLocation={{
-              latitude: driverLocation.coords.latitude,
-              longitude: driverLocation.coords.longitude
-            }}
-            pickupLocation={currentRide.pickupCoordinates}
-            destination={currentRide.destinationCoordinates}
-            rideStatus={rideStatus}
+      {/* Map 0: Incoming ride request map - show during incoming request */}
+      {driverLocation.coords && currentRideRequest?.pickupCoordinates && currentRideRequest?.destinationCoordinates && !currentRide ? (
+        <UberMap
+          driverLocation={{
+            latitude: driverLocation.coords.latitude,
+            longitude: driverLocation.coords.longitude
+          }}
+          pickupLocation={currentRideRequest.pickupCoordinates}
+          destination={currentRideRequest.destinationCoordinates}
+          rideStatus="incoming_request"
+        />
+      ) :
+      /* Map 1: Full ride map - driver + pickup + destination */
+      driverLocation.coords && currentRide?.pickupLocation?.coordinates && currentRide?.destinationLocation?.coordinates ? (
+        <UberMap
+          driverLocation={{
+            latitude: driverLocation.coords.latitude,
+            longitude: driverLocation.coords.longitude
+          }}
+          pickupLocation={currentRide.pickupLocation.coordinates}
+          destination={currentRide.destinationLocation.coordinates}
+          rideStatus={rideStatus}
+          currentRideStatus={currentRide.status}
+        />
+      ) : 
+      /* Map 2: Driver-only map - driver location available but no active ride */
+      driverLocation.coords && (!currentRide?.pickupLocation?.coordinates || !currentRide?.destinationLocation?.coordinates) ? (
+        <DriverOnlyMap
+          driverLocation={{
+            latitude: driverLocation.coords.latitude,
+            longitude: driverLocation.coords.longitude
+          }}
+        />
+      ) : 
+      /* Map 3: Fallback map - no sufficient coordinates available */
+      (
+        <MapView
+          style={styles.fallbackMapContainer}
+          initialRegion={{
+            latitude: 9.0765,
+            longitude: 7.3986,
+            latitudeDelta: 8,
+            longitudeDelta: 8,
+          }}
+        >
+          <Marker
+            coordinate={{ latitude: 9.0765, longitude: 7.3986 }}
+            title="Nigeria"
           />
-        ) : (
-          <MapView
-            style={styles.fallbackMapContainer}
-            initialRegion={{
-              latitude: 9.0765,
-              longitude: 7.3986,
-              latitudeDelta: 8,
-              longitudeDelta: 8,
-            }}
-          >
-            <Marker
-              coordinate={{ latitude: 9.0765, longitude: 7.3986 }}
-              title="Nigeria"
-            />
-          </MapView>
-        )}
-      {/* </View> */}
+        </MapView>
+      )}
 
- 
-
-      <View style={[styles.topRow, { top: insets.top + 8 }]}>
-        <Pressable
-          onPress={() => setIsDrawerOpen(true)}
-          style={({ pressed }) => [
-            styles.roundButton,
-            pressed ? styles.buttonPressed : undefined
-          ]}>State
-          <Menu color="#e2e8f0" size={20} />
-        </Pressable>
-
-        <View style={styles.statsPill}>
-          <AppText variant="label" style={styles.statsValue}>
-            12 RIDES | N191,700
-          </AppText>
-          <AppText variant="caption" style={styles.statsLabel}>
-            {rideRequest ? 'Incoming request' : driverLocationState.isTracking ? 'Live tracking' : 'Today'}
-          </AppText>
-        </View>
-
-        <View style={styles.avatarWrap}>
-          <AppText variant="label" style={styles.avatarText}>
-            {initials}
-          </AppText>
-        </View>
-      </View>
+      {shouldRenderHeaderBanner && (
+        <DriverHeaderBanner
+          top={insets.top + 6}
+          hasRideRequest={hasRideRequest}
+          rideRequestExpiresAt={currentRideRequest?.expiresAt}
+          onOpenDrawer={() => setIsDrawerOpen(true)}
+          onCancelRideRequest={handleCancelRideRequest}
+          showAcceptedRideBanner={showAcceptedRideBanner}
+          acceptedDistanceText={pickupDistanceText}
+          acceptedEtaText={pickupEtaText}
+          onNavigateToPickup={handleNavigateToPickup}
+          showOnTripBanner={showOnTripBanner}
+          onTripDistanceText={destinationDistanceText}
+          onTripEtaText={destinationEtaText}
+          onNavigateToDestination={handleNavigateToDestination}
+          statsValue="12 RIDES | N191,700"
+          statsLabel={driverLocationState.isTracking ? 'Live tracking' : 'Today'}
+          profilePhotoUrl={drawerProfilePhoto}
+          initials={initials}
+        />
+      )}
 
       <Pressable
         onPress={onToggleRideRequestPreview}
@@ -275,29 +393,33 @@ export function DriverHomeScreen({ onNavigateToProfileSetup }: DriverHomeScreenP
         <Pressable
           onPress={async () => {
             if (!driverProfile?.id) return;
-            setIsTogglingOnline(true);
-            try {
-              const newOnlineState = !driverLocationState.isOnline;
-              
-              console.log('[DriverHomeScreen] Toggling online status:', {
-                currentState: driverLocationState.isOnline,
-                newState: newOnlineState,
-                driverId: driverProfile.id
-              });
+            const newOnlineState = !driverLocationState.isOnline;
 
-              // Update Redux state immediately (this triggers the useEffect to start/stop tracking)
+            if (newOnlineState && needsProfileSetup) {
+              setShowProfileSetupModal(true);
+              return;
+            }
+
+            setIsTogglingOnline(true);
+            const previousOnlineState = driverLocationState.isOnline;
+            const previousAvailableState = driverLocationState.isAvailable;
+
+            try {
+
+
+              // Update Redux state immediately (this triggers location tracking start/stop)
               dispatch(setDriverOnlineState(newOnlineState));
               dispatch(setDriverAvailableState(newOnlineState));
               
-              // Sync to Firestore
-              await toggleDriverOnlineStatus(driverProfile.id, newOnlineState);
+              // Sync both states to Firestore
+              await toggleDriverOnlineAndAvailableStatus(driverProfile.id, newOnlineState, newOnlineState);
               
-              console.log('[DriverHomeScreen] Successfully toggled online status to:', newOnlineState);
+
             } catch (error) {
-              console.error('[DriverHomeScreen] Error toggling online status:', error);
-              // Revert on error
-              dispatch(setDriverOnlineState(driverLocationState.isOnline));
-              dispatch(setDriverAvailableState(driverLocationState.isAvailable));
+              console.error('[DriverHomeScreen] Error toggling online/available status:', error);
+              // Revert both states on error
+              dispatch(setDriverOnlineState(previousOnlineState));
+              dispatch(setDriverAvailableState(previousAvailableState));
             } finally {
               setIsTogglingOnline(false);
             }
@@ -442,63 +564,8 @@ const styles = StyleSheet.create({
     ...StyleSheet.absoluteFillObject,
     borderRadius: 0
   },
-  topRow: {
-    position: 'absolute',
-    top: 16,
-    left: 16,
-    right: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10
-  },
-  roundButton: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: 'rgba(11, 22, 31, 0.9)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.35)',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
   roundButtonDisabled: {
     opacity: 0.45
-  },
-  statsPill: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: 'rgba(11, 22, 31, 0.82)',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.3)',
-    paddingVertical: 10,
-    paddingHorizontal: 14
-  },
-  statsValue: {
-    color: '#f8fafc',
-    fontSize: 14,
-    fontWeight: '800',
-    letterSpacing: 0.2
-  },
-  statsLabel: {
-    marginTop: 2,
-    color: '#cbd5e1',
-    fontSize: 13,
-    fontWeight: '600'
-  },
-  avatarWrap: {
-    width: 42,
-    height: 42,
-    borderRadius: 21,
-    backgroundColor: '#0b1a25',
-    borderWidth: 1,
-    borderColor: 'rgba(148, 163, 184, 0.45)',
-    alignItems: 'center',
-    justifyContent: 'center'
-  },
-  avatarText: {
-    color: '#e2e8f0',
-    fontSize: 14,
-    fontWeight: '800'
   },
   securityFab: {
     position: 'absolute',

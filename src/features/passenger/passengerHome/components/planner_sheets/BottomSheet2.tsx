@@ -10,6 +10,16 @@ import {
   LayoutChangeEvent,
 } from 'react-native'
 import { appColors } from '../../../../../theme/colors'
+import { AppButton } from '../../../../../components/ui/AppButton'
+
+type ButtonVariant = 'green' | 'white' | 'danger' | 'primary' | 'secondary' | 'ghost'
+
+export interface BottomSheetButton {
+  label: string
+  variant?: ButtonVariant
+  onPress: () => void
+  loading?: boolean
+}
 
 const { height: SCREEN_HEIGHT } = Dimensions.get('window')
 const SWIPE_TRACK_HEIGHT = 58
@@ -32,6 +42,8 @@ interface BottomSheetProps {
   buttonLabel?: string
   onPressAction?: () => void
   buttonOnSwipe?: () => void
+  isLoading?: boolean
+  buttons?: BottomSheetButton[]
 }
 
 export const BottomSheet2: React.FC<BottomSheetProps> = ({
@@ -47,6 +59,8 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
   buttonLabel = 'Swipe right to confirm',
   onPressAction,
   buttonOnSwipe,
+  isLoading = false,
+  buttons,
 }) => {
   const [contentHeight, setContentHeight] = useState(0)
   const maxHeight = SCREEN_HEIGHT * maxHeightPercent
@@ -70,6 +84,7 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
   const shouldShowButtonRef = useRef(false)
   const buttonTypeRef = useRef<ButtonType>('swipe action button')
   const swipeActionRef = useRef<(() => void) | undefined>(undefined)
+  const isLoadingRef = useRef(false)
 
   const shouldShowButton = showButton ?? Boolean(buttonOnSwipe || onPressAction)
   const swipeAction = buttonOnSwipe ?? onPressAction
@@ -93,6 +108,10 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
     buttonTypeRef.current = buttonType
     swipeActionRef.current = swipeAction
   }, [shouldShowButton, buttonType, swipeAction])
+
+  useEffect(() => {
+    isLoadingRef.current = isLoading
+  }, [isLoading])
 
   useEffect(() => {
     return () => {
@@ -133,10 +152,13 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
   const swipeButtonResponder = useRef(
     PanResponder.create({
       onStartShouldSetPanResponder: () =>
-        shouldShowButtonRef.current && buttonTypeRef.current === 'swipe action button',
+        shouldShowButtonRef.current && 
+        buttonTypeRef.current === 'swipe action button' && 
+        !isLoadingRef.current,
       onMoveShouldSetPanResponder: (_, g) =>
         shouldShowButtonRef.current &&
         buttonTypeRef.current === 'swipe action button' &&
+        !isLoadingRef.current &&
         Math.abs(g.dx) > 3 &&
         Math.abs(g.dx) > Math.abs(g.dy),
       onPanResponderMove: (_, g) => {
@@ -271,13 +293,23 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
           {buttonType === 'pressable button' ? (
             <TouchableOpacity
               activeOpacity={0.85}
+              disabled={isLoading}
               onPress={onPressAction}
-              style={styles.pressableActionButton}
+              style={[
+                styles.pressableActionButton,
+                isLoading && styles.buttonDisabledState,
+              ]}
             >
               <Text style={styles.pressableActionLabel}>{buttonLabel}</Text>
             </TouchableOpacity>
           ) : (
-            <View style={styles.swipeTrack} onLayout={handleSwipeTrackLayout}>
+            <View 
+              style={[
+                styles.swipeTrack,
+                isLoading && styles.swipeTrackDisabled,
+              ]} 
+              onLayout={handleSwipeTrackLayout}
+            >
               <Animated.Text style={[styles.swipeLabel, { opacity: swipeLabelOpacity }]}>
                 {buttonLabel}
               </Animated.Text>
@@ -285,6 +317,7 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
               <Animated.View
                 style={[
                   styles.swipeThumb,
+                  isLoading && styles.swipeThumbDisabled,
                   {
                     transform: [{ translateX: swipeX }],
                   },
@@ -295,6 +328,24 @@ export const BottomSheet2: React.FC<BottomSheetProps> = ({
               </Animated.View>
             </View>
           )}
+        </View>
+      )}
+
+      {buttons && buttons.length > 0 && (
+        <View style={styles.buttonsContainer}>
+          {buttons.map((button, index) => (
+            <AppButton
+              key={index}
+              title={button.label}
+              variant={button.variant || 'green'}
+              onPress={button.onPress}
+              loading={button.loading || isLoading}
+              disabled={isLoading}
+              width="fullWidth"
+              containerStyle={index > 0 ? styles.buttonSpacing : undefined}
+              style={index === 0 ? styles.confirmButtonBorder : undefined}
+            />
+          ))}
         </View>
       )}
     </View>
@@ -345,8 +396,11 @@ const styles = StyleSheet.create({
     backgroundColor: appColors.primary,
     justifyContent: 'center',
     alignItems: 'center',
-    borderWidth:1,
-    borderColor:'teal'
+    borderWidth: 1,
+    borderColor: 'teal',
+  },
+  buttonDisabledState: {
+    opacity: 0.5,
   },
   pressableActionLabel: {
     color: '#FFFFFF',
@@ -361,6 +415,9 @@ const styles = StyleSheet.create({
     borderColor: appColors.borderDark,
     justifyContent: 'center',
     overflow: 'hidden',
+  },
+  swipeTrackDisabled: {
+    opacity: 0.5,
   },
   swipeLabel: {
     color: '#FFFFFF',
@@ -379,10 +436,33 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
+  swipeThumbDisabled: {
+    opacity: 0.5,
+  },
   swipeThumbArrow: {
     color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '800',
     letterSpacing: 0.6,
+  },
+  buttonsContainer: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 16,
+    paddingTop: 12,
+    paddingBottom: 16,
+    backgroundColor: appColors.primary,
+    borderTopLeftRadius: 20,
+    borderTopRightRadius: 20,
+    zIndex: 10,
+  },
+  buttonSpacing: {
+    marginTop: 10,
+  },
+  confirmButtonBorder: {
+    borderWidth: 2,
+    borderColor: 'teal',
   },
 })

@@ -37,6 +37,7 @@ import type { AppUser } from './src/types/auth';
 import { firestoreApi } from './src/api/apiClient';
 import {
   listenToActivePassengerRide,
+  listenToDriverActiveRide,
   listenToRiderData,
 } from './src/listeners';
 import { setRide } from './src/store/rideSlice';
@@ -67,6 +68,7 @@ const pickPersistedProfile = (
 function RootNavigator() {
   const { session, status } = useAppSelector(state => state.auth);
   const unsubscribeRideRef = useRef<(() => void) | null>(null);
+  const unsubscribeDriverRideRef = useRef<(() => void) | null>(null);
   const unsubscribeRiderRef = useRef<(() => void) | null>(null);
   const unsubscribeTokenRefreshRef = useRef<(() => void) | null>(null);
   const [authReady, setAuthReady] = React.useState(false);
@@ -88,6 +90,8 @@ function RootNavigator() {
       // Clean up any previous ride listener
       unsubscribeRideRef.current?.();
       unsubscribeRideRef.current = null;
+      unsubscribeDriverRideRef.current?.();
+      unsubscribeDriverRideRef.current = null;
       unsubscribeRiderRef.current?.();
       unsubscribeRiderRef.current = null;
       unsubscribeTokenRefreshRef.current?.();
@@ -131,17 +135,24 @@ function RootNavigator() {
             store.dispatch(clearSessionState());
           }
         }
-
-
-        // Ensure we never carry a stale persisted driver ride into a non-driver session.
-        if (restoredSession?.user.role !== 'driver') {
+        if (restoredSession?.user.role === 'driver' && restoredSession.user.id) {
+          unsubscribeDriverRideRef.current = listenToDriverActiveRide(
+            restoredSession.user.id,
+            () => {
+              // Redux updates happen inside listenToDriverActiveRide.
+            },
+            error => {
+              console.error('[driverRideListener] error:', error);
+            }
+          );
+        } else {
+          // Ensure we never carry a stale persisted driver ride into non-driver sessions.
           store.dispatch(clearCurrentRide());
         }
 
         unsubscribeRideRef.current = listenToActivePassengerRide(
           firebaseUser.uid,
           ride => {
-            // console.log('updated ride data from firestore:', ride);
             if (!ride) {
               store.dispatch(
                 updateRiderData({
@@ -194,6 +205,8 @@ function RootNavigator() {
       unsubscribeAuth();
       unsubscribeRideRef.current?.();
       unsubscribeRideRef.current = null;
+      unsubscribeDriverRideRef.current?.();
+      unsubscribeDriverRideRef.current = null;
       unsubscribeRiderRef.current?.();
       unsubscribeRiderRef.current = null;
       unsubscribeTokenRefreshRef.current?.();

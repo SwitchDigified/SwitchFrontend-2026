@@ -5,7 +5,6 @@ import {
   Phone,
   MessageCircle,
   X,
-  Navigation,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { AppText } from '../ui/AppText';
@@ -13,32 +12,13 @@ import { appColors } from '../../theme/colors';
 import { BottomSheet2 } from '../../features/passenger/passengerHome/components/planner_sheets';
 import { useCalculateDistance } from '../../hooks/useCalculateDistance';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
-import { updateRideStatusInFirestore } from '../../api/firestoreApi';
 import { ridesApi } from '../../api/apiClient';
 import { showError, showSuccess } from '../../store/toastSlice';
+import { DriverActiveRide } from '../../listeners';
 
 type RideOnTripSheetProps = {
   visible: boolean;
-  ride: {
-    id: string;
-    pickupAddress: string;
-    destinationAddress: string;
-    passengerName: string;
-    passengerPhone: string;
-    paymentMethod: string;
-    fare: string;
-    distanceRemaining?: string;
-    timeRemaining?: string;
-    riderRating?: number;
-    pickupCoordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-    destinationCoordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-  } | null;
+  ride: DriverActiveRide | null;
   onArrived?: () => void;
   onEmergency?: () => void;
   onCancel?: () => void;
@@ -63,16 +43,25 @@ export const RideOnTripSheet = ({
   // Local state for handling trip completion
   const [isStarting, setIsStarting] = useState(false);
 
+  const pickupCoordinates =
+    ride?.pickupLocation?.coordinates ?? currentRide?.pickupLocation?.coordinates;
+  const destinationCoordinates =
+    ride?.destinationLocation?.coordinates ?? currentRide?.destinationLocation?.coordinates;
+  const pickupAddress = ride?.pickupLocation?.address ?? 'Pickup location unavailable';
+  const destinationAddress =
+    ride?.destinationLocation?.address ?? 'Destination unavailable';
+  const riderPhone = ride?.rider?.phone;
+
   // Use the distance calculation hook for pickup to destination
   const { distanceString, timeRemaining } = useCalculateDistance(
-    ride?.pickupCoordinates || currentRide?.pickupCoordinates,
-    ride?.destinationCoordinates || currentRide?.destinationCoordinates
+    pickupCoordinates,
+    destinationCoordinates
   );
 
   // Calculate distance from current driver location to destination (updates in real-time)
   const { distanceString: driverToDestinationDistance, timeRemaining: driverToDestinationTime } = useCalculateDistance(
     currentDriverLocation,
-    ride?.destinationCoordinates || currentRide?.destinationCoordinates
+    destinationCoordinates
   );
 
   /**
@@ -108,11 +97,11 @@ export const RideOnTripSheet = ({
   if (!ride) return null;
 
   const handleCall = () => {
-    if (ride.passengerPhone) Linking.openURL(`tel:${ride.passengerPhone}`);
+    if (riderPhone) Linking.openURL(`tel:${riderPhone}`);
   };
 
   const handleMessage = () => {
-    if (ride.passengerPhone) Linking.openURL(`sms:${ride.passengerPhone}`);
+    if (riderPhone) Linking.openURL(`sms:${riderPhone}`);
   };
 
   const isButtonDisabled = isStarting || isLoading;
@@ -126,9 +115,10 @@ export const RideOnTripSheet = ({
       allowSheetDrag={!isButtonDisabled}
       showButton={true}
       buttonType="swipe action button"
+      isLoading={isShowingLoadingOverlay}
       buttonLabel={isShowingLoadingOverlay ? 'Updating...' : 'Arrived at destination'}
       onPressAction={handleArrivedAtDestination}
-      height={480}
+      height={360}
 
     >
       <View
@@ -148,14 +138,14 @@ export const RideOnTripSheet = ({
         </View>
 
         {/* Driver to Destination Distance - Real-time Update */}
-        <View style={styles.driverDistanceInfo}>
+        {/* <View style={styles.driverDistanceInfo}>
           <AppText variant="caption" style={styles.driverDistanceLabel}>
             Distance to Destination
           </AppText>
           <AppText variant="label" style={styles.driverDistanceValue}>
             {driverToDestinationDistance} • {driverToDestinationTime}
           </AppText>
-        </View>
+        </View> */}
 
         {/* Main Trip Card - Pickup & Fare Row */}
         <View style={styles.tripCard}>
@@ -174,7 +164,7 @@ export const RideOnTripSheet = ({
                 Pickup Location
               </AppText>
               <AppText variant="caption" style={styles.locationAddress}>
-                {ride.pickupAddress}
+                {pickupAddress}
               </AppText>
             </View>
           </View>
@@ -185,7 +175,7 @@ export const RideOnTripSheet = ({
               Fare
             </AppText>
             <AppText variant="label" style={styles.fareAmount}>
-              {ride.fare}
+              {ride.price}
             </AppText>
           </View>
         </View>
@@ -218,7 +208,7 @@ export const RideOnTripSheet = ({
               Destination
             </AppText>
             <AppText variant="caption" style={styles.locationAddress}>
-              {ride.destinationAddress}
+              {destinationAddress}
             </AppText>
           </View>
         </View>

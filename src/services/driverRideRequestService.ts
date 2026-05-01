@@ -1,7 +1,5 @@
-import {
-  clearDriverActiveRide,
-  respondToRideOfferAndDriverPresence
-} from '../api/firestoreApi';
+import { clearDriverActiveRide } from '../api/firestoreApi';
+import { ridesApi } from '../api/apiClient';
 import type { DriverRideRequest, DriverRideRequestStatus } from '../types/driverRideRequest';
 
 export const DRIVER_OFFER_STATUS = {
@@ -21,7 +19,7 @@ export const respondToDriverRideRequest = async ({
   request,
   status
 }: RespondToDriverRideRequestInput): Promise<boolean> => {
-  console.log('[Service] respondToDriverRideRequest called', {
+  if (false) console.log('[Service] respondToDriverRideRequest called', {
     driverId,
     offerId: request.offerId,
     rideId: request.rideId,
@@ -31,15 +29,17 @@ export const respondToDriverRideRequest = async ({
   const now = new Date().toISOString();
 
   try {
-    const result = await respondToRideOfferAndDriverPresence({
-      driverId,
-      offerId: request.offerId,
-      rideId: request.rideId,
-      status,
-      updatedAt: now
-    });
+    let result = true;
 
-    console.log('[Service] respondToDriverRideRequest completed', {
+    if (status === 'accepted') {
+      await ridesApi.acceptRide(request.rideId, request.offerId, driverId);
+    } else if (status === 'skipped') {
+      await ridesApi.skipRide(request.rideId, request.offerId, driverId);
+    } else {
+      await ridesApi.expireRideOffer(request.rideId, request.offerId, driverId);
+    }
+
+    if (false) console.log('[Service] respondToDriverRideRequest completed', {
       success: result,
       driverId,
       rideId: request.rideId,
@@ -63,7 +63,7 @@ export const clearDriverPendingRideRequest = async (
   driverId: string,
   request: DriverRideRequest
 ): Promise<void> => {
-  console.log('[Service] clearDriverPendingRideRequest called', {
+  if (false) console.log('[Service] clearDriverPendingRideRequest called', {
     driverId,
     rideId: request.rideId,
     offerId: request.offerId,
@@ -72,7 +72,7 @@ export const clearDriverPendingRideRequest = async (
   try {
     const now = new Date().toISOString();
     await clearDriverActiveRide(driverId, now);
-    console.log('[Service] clearDriverPendingRideRequest completed successfully', { driverId });
+
   } catch (error) {
     console.error('[Service] clearDriverPendingRideRequest failed', {
       driverId,

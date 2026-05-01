@@ -1,4 +1,4 @@
-import React, { memo } from 'react';
+import React, { memo, useState } from 'react';
 import { Image, Pressable, ScrollView, View } from 'react-native';
 import {
   Bell,
@@ -18,6 +18,9 @@ import type { RideLocation, RideType } from '../../../../types/ride';
 import { getScreenTitle } from '../utils';
 import { PlannerLayout } from './PlannerLayout';
 import { styles } from '../styles';
+import { useAppDispatch, useAppSelector } from '../../../../store/hooks';
+import { showError, showSuccess } from '../../../../store/toastSlice';
+import { ridesApi } from '../../../../api/apiClient';
 
 type DriverArriveScreenProps = {
   visible?: boolean;
@@ -73,13 +76,20 @@ function DriverArriveScreenComponent({
   onOpenChat,
   onOpenNotifications,
   onChangePaymentMethod,
-  onCancelRide,
-  cancelLoading,
 }: DriverArriveScreenProps) {
   if (!visible) {
     return null;
   }
+  const dispatch = useAppDispatch();
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
+  const rideData = useAppSelector((state) => state.ride);
+  const authState = useAppSelector((state) => state.auth);
+  const sessionUser = authState?.session?.user;
+  const activeRideId =
+    rideData?.latestRide?.id ??
+    (sessionUser && 'activeRideId' in sessionUser ? sessionUser.activeRideId : null);
   const startAddress = pickupLocation?.address ?? 'Afri Hotel, CBD';
   const stopAddress = stopLocation?.address ?? 'Utako Modern Market, Utako';
   const destinationAddress = destinationLocation?.address ?? 'Alpha Estate, Wuye';
@@ -93,6 +103,38 @@ function DriverArriveScreenComponent({
       .slice(0, 2)
       .map((part) => part[0]?.toUpperCase())
       .join('') || 'DR';
+
+
+
+        const onCancelRide = async () => {
+          // Validate required data
+          if (!activeRideId) {
+            dispatch(showError({ message: 'No active ride found to cancel' }));
+            return;
+          }
+      
+          if (!sessionUser?.id) {
+            dispatch(showError({ message: 'User not authenticated' }));
+            return;
+          }
+      
+          try {
+            setIsLoading(true);
+            setError(null);
+            
+            await ridesApi.cancelRide(activeRideId, sessionUser.id, 'passenger');
+            
+            dispatch(showSuccess({ message: 'Ride cancelled successfully' }));
+            // Success - parent component will handle navigation
+          } catch (err) {
+            const errorMessage = err instanceof Error ? err.message : 'Failed to cancel ride';
+            setError(errorMessage);
+            dispatch(showError({ message: errorMessage }));
+            console.error('[FindingView] Error canceling ride:', err);
+          } finally {
+            setIsLoading(false);
+          }
+        };
 
   return (
     <PlannerLayout
@@ -310,10 +352,10 @@ function DriverArriveScreenComponent({
           </View>
 
           <AppButton
-            title={cancelLoading ? 'Cancelling...' : 'Cancel Ride'}
+            title={isLoading ? 'Cancelling...' : 'Cancel Ride'}
             variant="danger"
             onPress={onCancelRide}
-            loading={cancelLoading}
+            loading={isLoading}
             style={styles.driverArriveCancelButton}
           />
         </View>

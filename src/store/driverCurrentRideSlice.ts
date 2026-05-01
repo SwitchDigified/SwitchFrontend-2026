@@ -13,26 +13,91 @@ export type RideCoordinates = {
  * Current active ride information displayed in bottom sheets
  * Tracks both ride request state and full ride lifecycle
  */
+
+
+export type RideLocation = {
+  address: string;
+  coordinates: RideCoordinates;
+  placeId: string;
+};
+
+export type DriverInfo = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  profilePhotoUrl: string;
+  ratings: {
+    count: number;
+    average: number;
+  };
+};
+
+export type RiderInfo = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  profilePhotoUrl: string | null;
+  ratings: {
+    count: number;
+    average: number;
+  };
+};
+
+export type RideMatching = {
+  dispatchStatus: string;
+  failureReason: string | null;
+  offerId: string;
+  selectedDriverId: string;
+  updatedAt: string;
+};
+
+export type RideSchedule = {
+  type: "now" | "scheduled";
+};
+
 export type DriverCurrentRide = {
   id: string;
+
   status: RideStatus;
+
+  createdAt: string;
+  updatedAt: string;
+  acceptedAt?: string;
+
+  cancelBy?: string | null;
+
   passengerId: string;
-  passengerName: string;
-  passengerPhone?: string;
-  pickupAddress: string;
-  pickupCoordinates?: RideCoordinates;
-  destinationAddress: string;
-  destinationCoordinates?: RideCoordinates;
-  paymentMethod?: string;
-  estimatedPickupTime?: string; // For 'accepted' status
-  estimatedTimeRemaining?: string; // For 'on_trip' status
-  estimatedDistance?: string; // For 'on_trip' status
-  tripDuration?: string; // For 'completed' status
-  tripDistance?: string; // For 'completed' status
-  fare?: number; // For 'completed' status
-  currency?: string; // For 'completed' status
-  createdAt?: string;
-  updatedAt?: string;
+
+  paymentMethod: string;
+
+  price: string;
+
+  rideType: string;
+
+  maxSkipLimit: number;
+  skipCount: number;
+
+  pickupLocation: RideLocation;
+
+  destinationLocation: RideLocation;
+
+  stopLocation?: RideLocation | null;
+
+  driver: DriverInfo;
+
+  rider: RiderInfo;
+
+  matching: RideMatching;
+
+  schedule: RideSchedule;
+
+  estimatedTimeRemaining?: string;
+
+  estimatedDistance?: string;
 };
 
 /**
@@ -59,6 +124,7 @@ const driverCurrentRideSlice = createSlice({
      * Set the current active ride
      */
     setCurrentRide(state, action: PayloadAction<DriverCurrentRide>) {
+      console.log('Setting current ride in driverCurrentRideSlice:', action.payload);
       state.currentRide = action.payload;
       state.error = null;
     },

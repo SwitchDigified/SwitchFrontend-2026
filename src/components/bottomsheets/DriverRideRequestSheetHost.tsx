@@ -39,26 +39,13 @@ const toIsoOrNull = (value: unknown): string | null => {
 const parseDriverRideRequestFromMessage = (
   message: FirebaseMessagingTypes.RemoteMessage
 ): DriverRideRequest | null => {
-  console.log('[RideRequestSheetHost] Incoming FCM message received', {
-    messageType: message.messageType,
-    hasData: !!message.data,
-    dataKeys: Object.keys(message.data ?? {}),
-  });
-
-  const data = message.data ?? {};
-  const type = getString(data.type);
-  
-  console.log('[RideRequestSheetHost] Message type extracted', { type });
 
   if (type !== 'ride_request') {
-    console.log('[RideRequestSheetHost] Message ignored - not a ride_request', { type });
     return null;
   }
 
   const offerId = getString(data.offerId);
   const rideId = getString(data.rideId);
-  
-  console.log('[RideRequestSheetHost] IDs extracted', { offerId, rideId });
 
   if (!offerId || !rideId) {
     console.warn('[RideRequestSheetHost] Invalid message - missing offerId or rideId', {
@@ -104,48 +91,18 @@ export function DriverRideRequestSheetHost() {
 
   const pushIncomingRequest = useCallback(
     (request: DriverRideRequest) => {
-      console.log('[RideRequestSheetHost] pushIncomingRequest called - dispatching setCurrentDriverRideRequest', {
-        offerId: request.offerId,
-        rideId: request.rideId,
-        pickupAddress: request.pickupAddress,
-        destinationAddress: request.destinationAddress,
-      });
       dispatch(setCurrentDriverRideRequest(request));
     },
     [dispatch]
   );
 
   useEffect(() => {
-    console.log('[RideRequestSheetHost] useEffect - Setting up FCM listeners', {
-      driverId,
-      isDriverSession: session?.user.role === 'driver',
-    });
-
     if (!driverId) {
-      console.log('[RideRequestSheetHost] No driverId - dismissing current request and returning');
       dispatch(dismissCurrentDriverRideRequest(undefined));
       return;
     }
 
     const handleRemoteMessage = (message: FirebaseMessagingTypes.RemoteMessage) => {
-      console.log('[RideRequestSheetHost] handleRemoteMessage called', {
-        driverId,
-        messageId: message.messageId,
-        sentTime: message.sentTime,
-      });
-
-      const nextRequest = parseDriverRideRequestFromMessage(message);
-      
-      if (!nextRequest) {
-        console.log('[RideRequestSheetHost] Failed to parse ride request from message');
-        return;
-      }
-
-      console.log('[RideRequestSheetHost] Parsed ride request - dispatching to Redux', {
-        driverId,
-        offerId: nextRequest.offerId,
-        rideId: nextRequest.rideId,
-      });
 
       pushIncomingRequest(nextRequest);
     };

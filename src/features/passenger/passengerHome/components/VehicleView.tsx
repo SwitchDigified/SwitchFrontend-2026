@@ -61,6 +61,7 @@ export function VehicleView({
       latestRide,
     } = useAppSelector((state) => state.ride);
     const [isCreating, setIsCreating] = useState(false);
+    const [selectedPrice, setSelectedPrice] = useState<string | null>(null);
 
     const sanitizeRideLocation = (location: RideLocation): RideLocation => {
       const sanitizedPlaceId =
@@ -73,6 +74,11 @@ export function VehicleView({
         ...(sanitizedPlaceId ? { placeId: sanitizedPlaceId } : {}),
         coordinates: location.coordinates,
       };
+    };
+
+    const handleSelectVehicle = (rideType: RideType, price: string) => {
+      onSelectVehicleOption(rideType);
+      setSelectedPrice(price);
     };
   
   const createRide = async () => {
@@ -107,6 +113,7 @@ export function VehicleView({
         stopLocation: stopLocation ? sanitizeRideLocation(stopLocation) : undefined,
         destinationLocation: sanitizeRideLocation(destinationLocation),
         paymentMethod,
+        price: selectedPrice || undefined,
         rider: {
           id: sessionUser.id,
           firstName: sessionUser.firstName,
@@ -121,8 +128,7 @@ export function VehicleView({
 
       try {
         setIsCreating(true);
-        const rideResponse = await ridesApi.createRideRequest(payload);
-        const ride = (rideResponse as { data?: any })?.data ?? rideResponse;
+        const ride = await ridesApi.createRideRequest(payload);
         dispatch(setRide(ride));
         dispatch(
           updatePassengerRideState({
@@ -261,7 +267,7 @@ export function VehicleView({
           return (
             <Pressable
               key={option.id}
-              onPress={() => onSelectVehicleOption(option.rideType)}
+              onPress={() => handleSelectVehicle(option.rideType, option.price)}
               style={({ pressed }) => [
                 styles.vehicleCard,
                 isActive ? styles.vehicleCardActive : undefined,

@@ -5,10 +5,15 @@ import type { CreateRideRequestPayload, RideRequest } from '../types/ride';
 
 // ─── Base URL ────────────────────────────────────────────────────────────────
 
+// const BASE_URL = Platform.select({
+//   android: 'http://10.68.205.234:4000',
+//   ios: 'http://localhost:4000',
+//   default: 'http://10.68.205.234:4000',
+// });
 const BASE_URL = Platform.select({
-  android: 'http://10.68.205.234:4000',
+  android: 'http://10.0.2.2:4000',
   ios: 'http://localhost:4000',
-  default: 'http://10.68.205.234:4000',
+  default: 'http://10.0.2.2:4000',
 });
 
 // ─── Config ──────────────────────────────────────────────────────────────────
@@ -47,12 +52,20 @@ const apiClient: AxiosInstance = axios.create({
 // ─── Interceptors ────────────────────────────────────────────────────────────
 
 apiClient.interceptors.request.use((config) => {
-  // console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`);
+  console.log(`[API] ${config.method?.toUpperCase()} ${config.url}`, {
+    data: config.data,
+    params: config.params
+  });
   return config;
 });
 
 apiClient.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    console.log(`[API] ${response.status} ${response.config.method?.toUpperCase()} ${response.config.url}`, {
+      data: response.data
+    });
+    return response;
+  },
   (error: AxiosError) => {
     const apiError: ApiError = {
       message: 'Something went wrong. Please try again.',
@@ -68,7 +81,11 @@ apiClient.interceptors.response.use(
       apiError.message = 'Network error. Make sure the server is reachable.';
     }
 
-    console.error(`[API] Error ${apiError.statusCode ?? 'Network'}: ${apiError.message}`);
+    console.error(`[API] Error ${apiError.statusCode ?? 'Network'}: ${apiError.message}`, {
+      url: error.config?.url,
+      method: error.config?.method,
+      data: error.response?.data
+    });
     return Promise.reject(apiError);
   }
 );
@@ -88,6 +105,9 @@ export const ridesApi = {
 
   skipRide: (rideId: string, offerId: string, driverId: string) =>
     apiClient.post('/api/rides/skip', { rideId, offerId, driverId }).then((r) => r.data),
+
+  expireRideOffer: (rideId: string, offerId: string, driverId: string) =>
+    apiClient.post('/api/rides/expire-offer', { rideId, offerId, driverId }).then((r) => r.data),
 
   cancelRide: (rideId: string, userId: string, role: 'driver' | 'passenger') =>
     apiClient.post('/api/rides/cancel', 

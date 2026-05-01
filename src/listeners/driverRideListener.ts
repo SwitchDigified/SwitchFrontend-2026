@@ -2,6 +2,8 @@ import { db } from '../config/firebase';
 import { collection, query, where, onSnapshot, Unsubscribe, getDoc, doc } from '@react-native-firebase/firestore';
 import type { RideStatus } from '../types/ride';
 import type { DriverRideRequest } from '../types/driverRideRequest';
+import { setCurrentRide, clearCurrentRide, DriverCurrentRide } from '../store/driverCurrentRideSlice';
+import { store } from '../store';
 
 /**
  * Location coordinates
@@ -12,28 +14,89 @@ type LocationCoordinates = {
 };
 
 /**
+ * Ride location with address and coordinates
+ */
+type RideLocationDetail = {
+  address: string;
+  coordinates: LocationCoordinates;
+  placeId: string;
+};
+
+/**
+ * Driver information
+ */
+type DriverDetail = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  profilePhotoUrl: string;
+  ratings: {
+    count: number;
+    average: number;
+  };
+};
+
+/**
+ * Rider/Passenger information
+ */
+type RiderDetail = {
+  id: string;
+  firstName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  profilePhotoUrl: string | null;
+  ratings: {
+    count: number;
+    average: number;
+  };
+};
+
+/**
+ * Ride matching details
+ */
+type RideMatchingDetail = {
+  dispatchStatus: string;
+  failureReason: string | null;
+  offerId: string;
+  selectedDriverId: string;
+  updatedAt: string;
+};
+
+/**
+ * Schedule information
+ */
+type ScheduleDetail = {
+  type: "now" | "scheduled";
+};
+
+/**
  * Driver's active ride being tracked
  */
 export type DriverActiveRide = {
   id: string;
   status: RideStatus;
   passengerId: string;
-  passengerName: string;
-  passengerPhone?: string;
-  pickupAddress: string;
-  pickupCoordinates?: LocationCoordinates;
-  destinationAddress: string;
-  destinationCoordinates?: LocationCoordinates;
-  paymentMethod?: string;
-  estimatedPickupTime?: string;
+  paymentMethod: string;
+  price: string;
+  rideType: string;
+  createdAt: string;
+  updatedAt: string;
+  acceptedAt?: string;
+  cancelBy?: string | null;
+  maxSkipLimit: number;
+  skipCount: number;
+  stopLocation?: RideLocationDetail | null;
+  pickupLocation: RideLocationDetail;
+  destinationLocation: RideLocationDetail;
+  driver: DriverDetail;
+  rider: RiderDetail;
+  matching: RideMatchingDetail;
+  schedule: ScheduleDetail;
   estimatedTimeRemaining?: string;
   estimatedDistance?: string;
-  tripDuration?: string;
-  tripDistance?: string;
-  fare?: number;
-  currency?: string;
-  createdAt?: string;
-  updatedAt?: string;
 };
 
 /**
@@ -53,7 +116,7 @@ export function listenToDriverActiveRide(
   try {
     const ridesCollection = collection(db, 'rides');
     
-    // Query rides where this driver is assigned and status is not terminal
+    // Query rides where this driver is assigned
     const q = query(
       ridesCollection,
       where('driver.id', '==', driverId),
@@ -62,48 +125,32 @@ export function listenToDriverActiveRide(
     const unsubscribe = onSnapshot(
       q,
       (snapshot) => {
-        const rides = snapshot.docs
-          .map((doc) => {
-            const data = doc.data();
-            return {
-              id: doc.id,
-              status: (data.status as RideStatus) || 'requested',
-              passengerId: data.passengerId || '',
-              passengerName: data.rider?.firstName
-                ? `${data.rider.firstName} ${data.rider.lastName || ''.trim()}`
-                : 'Passenger',
-              passengerPhone: data.rider?.phone,
-              pickupAddress: data.pickupLocation?.address || '',
-              pickupCoordinates: data.pickupLocation?.coordinates
-                ? {
-                    latitude: data.pickupLocation.coordinates.latitude,
-                    longitude: data.pickupLocation.coordinates.longitude,
-                  }
-                : undefined,
-              destinationAddress: data.destinationLocation?.address || '',
-              destinationCoordinates: data.destinationLocation?.coordinates
-                ? {
-                    latitude: data.destinationLocation.coordinates.latitude,
-                    longitude: data.destinationLocation.coordinates.longitude,
-                  }
-                : undefined,
-              paymentMethod: data.paymentMethod || undefined,
-              estimatedPickupTime: data.estimatedPickupTime,
-              estimatedTimeRemaining: data.estimatedTimeRemaining,
-              estimatedDistance: data.estimatedDistance,
-              tripDuration: data.tripDuration,
-              tripDistance: data.tripDistance,
-              fare: data.fare,
-              currency: data.currency,
-              createdAt: data.createdAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-              updatedAt: data.updatedAt?.toDate?.()?.toISOString() || new Date().toISOString(),
-            } as DriverActiveRide;
-          })
-          // Filter out terminal statuses
-          .filter((ride) => !['completed', 'cancelled'].includes(ride.status));
+        // Filter out terminal statuses and get first active ride
+        const activeRide = snapshot.docs.find((doc) => {
+          const data = doc.data();
+          const status = (data.status as RideStatus) || 'requested';
+          return !['completed', 'cancelled'].includes(status);
+        });
 
-        // Return the first active ride, or null if none
-        onRideUpdate(rides.length > 0 ? rides[0] : null);
+        if (activeRide) {
+          const data = activeRide.data();
+          
+          // Cast raw Firestore data to DriverCurrentRide (it has the same structure)
+          const rideData = {
+            id: activeRide.id,
+            ...data,
+          } as DriverCurrentRide;
+          
+          // Dispatch ride data to Redux
+          store.dispatch(setCurrentRide(rideData));
+          
+          // Notify callback with same structured data for DriverActiveRide
+          onRideUpdate(rideData as unknown as DriverActiveRide);
+        } else {
+          // No active ride found - clear current ride state
+          store.dispatch(clearCurrentRide());
+          onRideUpdate(null);
+        }
       },
       (error) => {
         console.error('[driverRideListener] Firestore error:', error);
@@ -149,7 +196,6 @@ export function listenToDriverRideOffers(
   onError?: (error: Error) => void,
 ): Unsubscribe {
   try {
-    console.log('[listenToDriverRideOffers] Setting up listener for driver:', driverId);
     
     const offersCollection = collection(db, 'ride_offers');
     const ridesCollection = collection(db, 'rides');
@@ -164,10 +210,6 @@ export function listenToDriverRideOffers(
     const unsubscribe = onSnapshot(
       q,
       async (snapshot) => {
-        console.log('[listenToDriverRideOffers] Snapshot received:', {
-          count: snapshot.docs.length,
-          hasChanges: snapshot.docChanges().length > 0,
-        });
 
         // Process first pending offer
         if (snapshot.docs.length > 0) {
@@ -175,11 +217,7 @@ export function listenToDriverRideOffers(
           const offerData = offerDoc.data();
           const rideId = offerData.rideId;
 
-          console.log('[listenToDriverRideOffers] Processing offer:', {
-            offerId: offerDoc.id,
-            rideId,
-            status: offerData.status,
-          });
+   
 
           // Fetch the full ride details
           try {
@@ -188,12 +226,7 @@ export function listenToDriverRideOffers(
 
             if (rideSnap.exists) {
               const rideData = rideSnap.data();
-              console.log('[listenToDriverRideOffers] Ride data fetched:', {
-                rideId,
-                status: rideData?.status,
-                pickupAddress: rideData?.pickupLocation?.address,
-              });
-
+             
               // Build complete DriverRideRequest with coordinates
               const driverRideRequest: DriverRideRequest = {
                 offerId: offerDoc.id,
@@ -222,10 +255,7 @@ export function listenToDriverRideOffers(
                 expiresAt: new Date(Date.now() + 30000).toISOString(), // 30 sec timeout
               };
 
-              console.log('[listenToDriverRideOffers] Calling onOfferUpdate with request:', {
-                offerId: driverRideRequest.offerId,
-                rideId: driverRideRequest.rideId,
-              });
+            
               onOfferUpdate(driverRideRequest);
             } else {
               console.warn('[listenToDriverRideOffers] Ride document not found:', rideId);
@@ -250,7 +280,6 @@ export function listenToDriverRideOffers(
       },
     );
 
-    console.log('[listenToDriverRideOffers] Listener attached successfully');
     return unsubscribe;
   } catch (error) {
     console.error('[listenToDriverRideOffers] Setup error:', error);

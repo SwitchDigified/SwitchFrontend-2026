@@ -1,25 +1,22 @@
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 import { Marker } from 'react-native-maps';
-import { Car, MapPin, Flag } from 'lucide-react-native';
+import { Flag } from 'lucide-react-native';
+import UserLocationIcon from '../../../assets/images/icons/passenger_home/user.svg';
+import DriverLocationIcon from '../../../assets/images/icons/passenger_home/car.svg';
 import { Coordinate, RideStatus } from './types';
 
 // ─── Individual Marker Pins ───────────────────────────────────────────────
 
 const DriverPin: React.FC = () => (
-  <View style={styles.driverMarker}>
-    <View style={styles.driverMarkerPin}>
-      <Car size={18} color="#fff" strokeWidth={2.5} />
-    </View>
+  <View collapsable={false} style={styles.driverMarker}>
+    <DriverLocationIcon width={28} height={28} />
   </View>
 );
 
 const PickupPin: React.FC = () => (
-  <View style={styles.pickupMarker}>
-    <View style={styles.pickupMarkerPin}>
-      <MapPin size={20} color="#fff" strokeWidth={2.5} />
-    </View>
-    <View style={styles.pickupMarkerTail} />
+  <View collapsable={false} style={styles.pickupMarker}>
+    <UserLocationIcon width={28} height={28} />
   </View>
 );
 
@@ -61,9 +58,10 @@ export const MapMarkers: React.FC<MapMarkersProps> = ({
         <Marker
           coordinate={driverLocation}
           anchor={{ x: 0.5, y: 0.5 }}
-          tracksViewChanges={false}
+          tracksViewChanges
+          zIndex={13}
         >
-          {/* <DriverPin /> */}
+          <DriverPin />
         </Marker>
       )}
 
@@ -71,10 +69,11 @@ export const MapMarkers: React.FC<MapMarkersProps> = ({
       {showAll && (
         <Marker
           coordinate={pickupLocation}
-          anchor={{ x: 0.5, y: 1 }}
-          tracksViewChanges={false}
+          anchor={{ x: 0.5, y: 0.5 }}
+          tracksViewChanges
+          zIndex={12}
         >
-          {/* <PickupPin /> */}
+          <PickupPin />
         </Marker>
       )}
 
@@ -95,60 +94,38 @@ export const MapMarkers: React.FC<MapMarkersProps> = ({
 // ─── Styles ───────────────────────────────────────────────────────────────
 
 const styles = StyleSheet.create({
-  // Driver marker - blue circular pin with car icon
+  // Driver marker - render car SVG directly (no extra circular wrapper)
   driverMarker: {
-    alignItems: 'center',
-    justifyContent: 'flex-end',
-    width: 56,
-    height: 56,
-  },
-  driverMarkerPin: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#1C6EF2',
-    borderWidth: 3,
-    borderColor: '#fff',
+    width: 36,
+    height: 36,
+    borderRadius: 20,
+    backgroundColor: '#FFFFFF',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: 'rgba(15, 118, 110, 0.95)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
   },
 
   // Pickup marker - green pin with map pin icon
   pickupMarker: {
-    alignItems: 'center',
-    width: 56,
-    height: 72,
-  },
-  pickupMarkerPin: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: '#00C853',
-    borderWidth: 3,
-    borderColor: '#fff',
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(15, 118, 110, 0.95)',
     alignItems: 'center',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-  },
-  pickupMarkerTail: {
-    width: 0,
-    height: 0,
-    backgroundColor: 'transparent',
-    borderLeftColor: 'transparent',
-    borderRightColor: 'transparent',
-    borderTopColor: '#00C853',
-    borderLeftWidth: 12,
-    borderRightWidth: 12,
-    borderTopWidth: 16,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 3,
+    elevation: 4,
   },
 
   // Destination marker - dark pin with flag icon

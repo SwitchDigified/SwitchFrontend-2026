@@ -45,14 +45,6 @@ export const toastSlice = createSlice({
         duration: duration ?? defaultDuration,
       };
 
-      console.log('[toastSlice] Adding toast to state:', {
-        toastId: toast.id,
-        toastType: toast.type,
-        toastMessage: toast.message,
-        duration: toast.duration,
-        totalToasts: state.toasts.length + 1,
-      });
-
       state.toasts.push(toast);
     },
 
@@ -61,10 +53,6 @@ export const toastSlice = createSlice({
      */
     removeToast: (state, action: PayloadAction<string>) => {
       const toastId = action.payload;
-      console.log('[toastSlice] Removing toast:', {
-        toastId,
-        remainingToasts: state.toasts.length - 1,
-      });
       state.toasts = state.toasts.filter(toast => toast.id !== toastId);
     },
 
@@ -92,12 +80,6 @@ export const toastSlice = createSlice({
         type: 'success',
         duration: duration ?? 3000,
       };
-      console.log('[toastSlice] Adding SUCCESS toast:', {
-        toastId: toast.id,
-        message: toast.message,
-        duration: toast.duration,
-        totalToasts: state.toasts.length + 1,
-      });
       state.toasts.push(toast);
     },
 
@@ -118,12 +100,7 @@ export const toastSlice = createSlice({
         type: 'error',
         duration: duration ?? 4000,
       };
-      console.log('[toastSlice] Adding ERROR toast:', {
-        toastId: toast.id,
-        message: toast.message,
-        duration: toast.duration,
-        totalToasts: state.toasts.length + 1,
-      });
+
       state.toasts.push(toast);
     },
 
@@ -144,12 +121,7 @@ export const toastSlice = createSlice({
         type: 'info',
         duration: duration ?? 3000,
       };
-      console.log('[toastSlice] Adding INFO toast:', {
-        toastId: toast.id,
-        message: toast.message,
-        duration: toast.duration,
-        totalToasts: state.toasts.length + 1,
-      });
+
       state.toasts.push(toast);
     },
   },

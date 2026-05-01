@@ -27,6 +27,7 @@ export type UberMapProps = {
   destination: Coordinate;
   rideStatus: RideStatus;
   onRetry?: () => void;
+  currentRideStatus?: string;
 };
 
 export type UseRouteOptions = {

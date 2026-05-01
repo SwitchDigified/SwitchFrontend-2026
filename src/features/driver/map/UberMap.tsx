@@ -2,6 +2,7 @@ import React, { useCallback, useEffect, useRef } from 'react';
 import {
   ActivityIndicator,
   Animated,
+  Linking,
   Platform,
   Pressable,
   StyleSheet,
@@ -9,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import MapView, { MapViewProps, PROVIDER_GOOGLE } from 'react-native-maps';
+import { Navigation } from 'lucide-react-native';
 
 import { MAP_PADDING } from './constants';
 import { MapMarkers } from './MapMarkers';
@@ -88,6 +90,7 @@ export const UberMap: React.FC<UberMapProps> = ({
   destination,
   rideStatus,
   onRetry,
+  currentRideStatus,
 }) => {
   const mapRef = useRef<MapView>(null);
   const { routeData, loading, error, refetch } = useRoute({
@@ -141,6 +144,42 @@ export const UberMap: React.FC<UberMapProps> = ({
     onRetry?.();
   }, [refetch, onRetry]);
 
+  /**
+   * Open Google Maps with navigation
+   * Status "accepted": driver location to pickup location
+   * Status "on_trip": pickup location to destination location
+   */
+  const handleOpenGoogleMaps = useCallback(() => {
+    let originLat: number;
+    let originLng: number;
+    let destLat: number;
+    let destLng: number;
+
+    // Determine coordinates based on ride status
+    if (currentRideStatus === 'accepted') {
+      // Driver location to pickup location
+      originLat = driverLocation.latitude;
+      originLng = driverLocation.longitude;
+      destLat = pickupLocation.latitude;
+      destLng = pickupLocation.longitude;
+    } else if (currentRideStatus === 'on_trip') {
+      // Pickup location to destination location
+      originLat = pickupLocation.latitude;
+      originLng = pickupLocation.longitude;
+      destLat = destination.latitude;
+      destLng = destination.longitude;
+    } else {
+      return;
+    }
+
+    // Google Maps URL format for navigation
+    const googleMapsUrl = `https://www.google.com/maps/dir/${originLat},${originLng}/${destLat},${destLng}?travelmode=driving`;
+    
+    Linking.openURL(googleMapsUrl).catch((error) => {
+      console.error('[UberMap] Error opening Google Maps:', error);
+    });
+  }, [currentRideStatus, driverLocation, pickupLocation, destination]);
+
   /** Compute initial region from all three coords */
   const initialRegion = getBoundingRegion(
     [driverLocation, pickupLocation, destination],
@@ -178,6 +217,24 @@ export const UberMap: React.FC<UberMapProps> = ({
           rideStatus={rideStatus}
         />
       </MapView>
+
+      {/* Google Maps Navigation Button */}
+      {/* {currentRideStatus && (currentRideStatus === 'accepted' || currentRideStatus === 'on_trip') && (
+        <Pressable
+          onPress={handleOpenGoogleMaps}
+          style={({ pressed }) => [
+            styles.googleMapsButton,
+            pressed && styles.googleMapsButtonPressed,
+          ]}
+          accessibilityRole="button"
+          accessibilityLabel="Open route in Google Maps"
+        >
+          <View style={styles.googleMapsIconWrap}>
+            <Navigation size={16} color="#0d7a5d" strokeWidth={2.5} />
+          </View>
+          <Text style={styles.googleMapsButtonText}>Open in Maps</Text>
+        </Pressable>
+      )} */}
 
       {/* Loading */}
       {loading && <MapLoadingOverlay />}
@@ -276,5 +333,40 @@ const styles = StyleSheet.create({
     fontWeight: '700',
     color: '#fff',
     letterSpacing: 0.3,
+  },
+  googleMapsButton: {
+    position: 'absolute',
+    top: '36%',
+    left: 16,
+    flexDirection: 'row',
+    backgroundColor: '#ffffff',
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: '#d7efe8',
+    paddingVertical: 8,
+    paddingHorizontal: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+    ...CARD_SHADOW,
+    zIndex: 10,
+  },
+  googleMapsIconWrap: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#daf8ef',
+  },
+  googleMapsButtonPressed: {
+    opacity: 0.94,
+    transform: [{ scale: 0.97 }],
+  },
+  googleMapsButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#0f6f56',
+    letterSpacing: 0.2,
   },
 });

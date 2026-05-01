@@ -30,6 +30,7 @@ import type {
 } from '../../../types/ride';
 import { DEFAULT_REGION } from '../passengerHome/constants';
 import { FindingView } from '../passengerHome/components/FindingView';
+import { NoDriverAvailableScreen } from '../passengerHome/components/NoDriverAvailableScreen';
 import { DriverArriveScreen } from '../passengerHome/components/DriverArriveScreen';
 import { EnRouteScreen } from '../passengerHome/components/EnRouteScreen';
 import { HomeView } from '../passengerHome/components/HomeView';
@@ -53,15 +54,20 @@ const getScreenBasedOnRideStatus = (
       return 'arrived';
     case 'on_trip':
       return 'on_trip';
+    case 'exhausted':
+      return 'exhausted';
     default:
       return 'plan';
   }
 };
 
 export function PassengerHomeScreen() {
-  const riderData = useAppSelector(s=>s.passengerProfile
+const riderData = useAppSelector(s=>s.passengerProfile
+
 )
-  console.log("rideerData", riderData)
+const currentRide = useAppSelector(s=>s.ride.latestRide)
+console.log("currentRide RIDER DATA", currentRide)
+  // console.log("PASSENGER", riderData)
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const { session, onLogout } = usePassengerHomeState();
@@ -254,7 +260,8 @@ export function PassengerHomeScreen() {
       screen !== 'finding' &&
       screen !== 'accepted' &&
       screen !== 'arrived' &&
-      screen !== 'on_trip'
+      screen !== 'on_trip' &&
+      screen !== 'exhausted'
     ) {
       return;
     }
@@ -330,6 +337,11 @@ export function PassengerHomeScreen() {
 
   const onBackPress = () => {
     if (screen === 'finding') {
+      setScreen('home');
+      return;
+    }
+
+    if (screen === 'exhausted') {
       setScreen('home');
       return;
     }
@@ -428,7 +440,8 @@ export function PassengerHomeScreen() {
     screen === 'finding' ||
     screen === 'accepted' ||
     screen === 'arrived' ||
-    screen === 'on_trip'
+    screen === 'on_trip' ||
+    screen === 'exhausted'
   ) {
     return (
       <>
@@ -462,9 +475,15 @@ export function PassengerHomeScreen() {
           topInset={insets.top}
           bottomInset={insets.bottom}
           onBackPress={() => setScreen('home')}
-          onCancelRide={onCancelRide}
-          cancelLoading={cancelStatus === 'loading'}
           visible={screen === 'finding'}
+        />
+
+        <NoDriverAvailableScreen
+          avatarLabel={avatarLabel}
+          topInset={insets.top}
+          bottomInset={insets.bottom}
+          onBackPress={() => setScreen('home')}
+          visible={screen === 'exhausted'}
         />
 
         <DriverArriveScreen

@@ -159,7 +159,8 @@ export function PlannerLayout({
         currentScreen === 'finding' ||
         currentScreen === 'accepted' ||
         currentScreen === 'arrived' ||
-        currentScreen === 'on_trip') && (
+        currentScreen === 'on_trip' ||
+        currentScreen === 'exhausted') && (
        <BottomSheet2
           visible={true}
           onClose={() => {}}

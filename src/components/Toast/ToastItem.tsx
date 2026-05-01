@@ -92,10 +92,7 @@ export const ToastItem = React.forwardRef<Animated.Value, ToastItemProps>(
       // Auto dismiss after duration
       if (duration > 0) {
         const dismissTimer = setTimeout(() => {
-          console.log('[ToastItem] Auto-dismissing toast after duration:', {
-            toastId: id,
-            duration,
-          });
+         
           dismissToast();
         }, duration);
 
@@ -105,7 +102,7 @@ export const ToastItem = React.forwardRef<Animated.Value, ToastItemProps>(
       }
 
       return () => {
-        console.log('[ToastItem] Unmounting:', id);
+        // console.log('[ToastItem] Unmounting:', id);
       };
     }, []);
 

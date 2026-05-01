@@ -73,6 +73,8 @@ const normalizeRideStatus = (value: string | null | undefined): RideStatus => {
       return 'completed';
     case 'cancelled':
       return 'cancelled';
+    case 'exhausted':
+      return 'exhausted';
     case 'requested':
     case 'requesting':
     case 'searching_driver':
@@ -190,7 +192,7 @@ export function listenToActivePassengerRide(
   return subscribePassengerRideDocuments(
     passengerId,
     (docs) => {
-      // console.log("RIDE DOCS", docs)
+      // console.log("TEST RIDE DOCS", docs)
       const activeRides = docs
         .map((docItem) => normalizeRide(docItem.id, docItem.data as FirestoreRide))
         .filter((ride) => !TERMINAL_STATUSES.includes(ride.status));

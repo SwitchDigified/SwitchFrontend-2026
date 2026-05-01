@@ -56,6 +56,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, eta }) => {
     arrived: 'Driver has arrived',
     completed: 'Trip completed',
     cancelled: 'Ride cancelled',
+    exhausted: 'No drivers available',
   };
 
   const color: Record<RideStatus, string> = {
@@ -66,6 +67,7 @@ const StatusBadge: React.FC<StatusBadgeProps> = ({ status, eta }) => {
     arrived: '#0A7E5C',
     completed: '#2D2D2D',
     cancelled: '#C0392B',
+    exhausted: '#FF6B6B',
   };
 
   return (

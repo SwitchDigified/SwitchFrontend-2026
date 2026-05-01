@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Linking, ActivityIndicator, Platform } from 'react-native';
+import { View, StyleSheet, TouchableOpacity, Linking, ActivityIndicator } from 'react-native';
 import {
   MapPin,
   Phone,
@@ -9,7 +9,6 @@ import {
   User,
 } from 'lucide-react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import axios from 'axios';
 import { AppText } from '../ui/AppText';
 import { appColors } from '../../theme/colors';
 import { BottomSheet2 } from '../../features/passenger/passengerHome/components/planner_sheets';
@@ -17,112 +16,143 @@ import { useCalculateDistance } from '../../hooks/useCalculateDistance';
 import { useAppSelector, useAppDispatch } from '../../store/hooks';
 import { showSuccess, showError } from '../../store/toastSlice';
 import { ridesApi } from '../../api/apiClient';
+import type { RideRequest } from '../../types/ride';
+import { DriverActiveRide } from '../../listeners';
 
 type RideAcceptedSheetProps = {
   visible: boolean;
-  ride: {
-    id: string;
-    pickupAddress: string;
-    destinationAddress: string;
-    passengerName: string;
-    passengerPhone: string;
-    estimatedPickupTime: string;
-    paymentMethod: string;
-    pickupCoordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-    destinationCoordinates?: {
-      latitude: number;
-      longitude: number;
-    };
-  } | null;
-  // onStartTrip: () => Promise<void>;
-  // onCancel: () => void;
+  ride: DriverActiveRide | null;
+ 
   isLoading?: boolean;
 };
-
-  const BASE_URL = Platform.select({
-  android: 'http://10.68.205.234:4000',
-  ios: 'http://localhost:4000',
-  default: 'http://10.68.205.234:4000',
-});
 
 export const RideAcceptedSheet = ({
   visible,
   ride,
-  // onStartTrip,
-  // onCancel,
   isLoading = false,
 }: RideAcceptedSheetProps) => {
+  console.log("RIDEREQUESTSHEET", ride)
   const [isStarting, setIsStarting] = useState(false);
   const insets = useSafeAreaInsets();
   const dispatch = useAppDispatch();
   const driverLocation = useAppSelector((state) => state.driverLocation.currentLocation);
-   const driverId = useAppSelector((state) => state.auth.session?.user.id);
- 
+  const driverId = useAppSelector((state) => state.auth.session?.user.id);
+  
+  // Get the full ride data from Redux store
+
+
 
   // Distance from pickup to destination
   const { distanceString, timeRemaining } = useCalculateDistance(
-    ride?.pickupCoordinates,
-    ride?.destinationCoordinates
+    ride?.pickupLocation.coordinates,
+    ride?.destinationLocation.coordinates
   );
 
   // Distance from driver location to pickup location
   const { distanceString: driverToPickupDistance } = useCalculateDistance(
     driverLocation,
-    ride?.pickupCoordinates
+    ride?.pickupLocation.coordinates
   );
 
   if (!ride) return null;
 
 
-const handleStartTrip = async () => {
-  if(!driverId) {
-    dispatch(showError({message: 'Driver not authenticated. Please log in again.'}));
-    return;
-  }
-  try {
-    setIsStarting(true);
-    const data = await ridesApi.startTrip({
-      rideId: ride.id,
-      driverId,
-    });
-    console.log('[RideAcceptedSheet] Trip started:', data);
-    dispatch(showSuccess({message: 'Trip started successfully'}));
-    // await onStartTrip();
-  } catch (error) {
-    const errorMessage = (error as any)?.response?.data?.message ?? (error as any)?.message ?? 'Failed to start trip';
-    console.error('[RideAcceptedSheet] Error starting trip:', errorMessage);
-    dispatch(showError({message: errorMessage, duration: 5000}));
-  } finally {
-    setIsStarting(false);
-  }
-};
+  const handleStartTrip = async () => {
+    if (!driverId) {
+      dispatch(showError({ message: 'Driver not authenticated. Please log in again.' }));
+      return;
+    }
+    try {
+      setIsStarting(true);
+      const data = await ridesApi.startTrip({
+        rideId: ride.id,
+        driverId,
+      });
+      console.log('[RideAcceptedSheet] Trip started:', data);
+      dispatch(showSuccess({ message: 'Trip started successfully' }));
+      // await onStartTrip();
+    } catch (error) {
+      const errorMessage = (error as any)?.response?.data?.message ?? (error as any)?.message ?? 'Failed to start trip';
+      console.error('[RideAcceptedSheet] Error starting trip:', errorMessage);
+      dispatch(showError({ message: errorMessage, duration: 5000 }));
+    } finally {
+      setIsStarting(false);
+    }
+  };
 
   const handleCall = () => {
-    if (ride.passengerPhone) Linking.openURL(`tel:${ride.passengerPhone}`);
+    if (ride.rider.phone) Linking.openURL(`tel:${ride.rider.phone}`);
   };
 
   const handleMessage = () => {
-    if (ride.passengerPhone) Linking.openURL(`sms:${ride.passengerPhone}`);
+    if (ride.rider.phone) Linking.openURL(`sms:${ride.rider.phone}`);
   };
 
-  const initial = ride.passengerName?.charAt(0)?.toUpperCase() ?? '?';
+  const initial = ride.rider.firstName?.charAt(0)?.toUpperCase() ?? '?';
   const isButtonDisabled = isStarting || isLoading;
   const isShowingLoadingOverlay = isStarting || isLoading;
+
+
+        const onCancelRide = async () => {
+          // Validate required data
+          // if (!activeRideId) {
+          //   dispatch(showError({ message: 'No active ride found to cancel' }));
+          //   return;
+          // }
+      
+          // if (!sessionUser?.id) {
+          //   dispatch(showError({ message: 'User not authenticated' }));
+          //   return;
+          // }
+      
+          // try {
+          //   setIsLoading(true);
+          //   setError(null);
+            
+          //   await ridesApi.cancelRide(activeRideId, sessionUser.id, 'passenger');
+            
+          //   dispatch(showSuccess({ message: 'Ride cancelled successfully' }));
+          //   // Success - parent component will handle navigation
+          // } catch (err) {
+          //   const errorMessage = err instanceof Error ? err.message : 'Failed to cancel ride';
+          //   setError(errorMessage);
+          //   dispatch(showError({ message: errorMessage }));
+          //   console.error('[FindingView] Error canceling ride:', err);
+          // } finally {
+          //   setIsLoading(false);
+          // }
+        };
 
   return (
     <BottomSheet2
       visible={visible}
       onClose={()=>{}}
       snapPoints={[0, 180]}
-      allowSheetDrag={!isButtonDisabled}
+      allowSheetDrag={true}
       showButton={true}
       buttonType="swipe action button"
       buttonLabel={isShowingLoadingOverlay ? 'STARTING TRIP...' : 'SWIPE TO START TRIP'}
+      isLoading={isShowingLoadingOverlay}
       onPressAction={handleStartTrip}
       height={560}
+  //       buttons={[
+  //   {
+  //     label: 'Confirm',
+  //     variant: 'green',
+  //     onPress: ()=>{},
+  //     loading: false,
+  //   },
+  //   {
+  //     label: 'Cancel',
+  //     variant: 'white',
+  //     onPress:()=>{},
+  //   },
+  //   {
+  //     label: 'Delete',
+  //     variant: 'danger',
+  //     onPress:()=>{},
+  //   },
+  // ]}
     >
       <View
         style={[
@@ -141,10 +171,10 @@ const handleStartTrip = async () => {
             <View style={styles.nameRatingRow}>
               <View>
                 <AppText variant="label" style={styles.passengerName}>
-                  {ride.passengerName}
+                  {ride.rider.firstName} {ride.rider.lastName}
                 </AppText>
                 <AppText variant="caption" style={styles.passengerHandle}>
-                  @mimi_eyo
+                  @{ride.rider.firstName?.toLowerCase() || 'rider'}
                 </AppText>
               </View>
 
@@ -153,7 +183,7 @@ const handleStartTrip = async () => {
                   ★
                 </AppText>
                 <AppText variant="caption" style={styles.ratingText}>
-                  4.9
+                  {ride.rider.ratings?.average.toFixed(1) || 'N/A'}
                 </AppText>
               </View>
             </View>
@@ -163,7 +193,7 @@ const handleStartTrip = async () => {
                 Pickup Location
               </AppText>
               <AppText variant="caption" style={styles.pickupAddressText}>
-                {ride.pickupAddress}
+                {ride.pickupLocation.address}
               </AppText>
             </View>
           </View>
@@ -176,7 +206,7 @@ const handleStartTrip = async () => {
               Ride Info
             </AppText>
             <AppText variant="caption" style={styles.rideInfoDistance}>
-              {/* {distanceString} ({timeRemaining}) */}
+              {distanceString} ({timeRemaining})
             </AppText>
           </View>
 
@@ -191,7 +221,7 @@ const handleStartTrip = async () => {
               <MapPin size={14} color="#111" strokeWidth={2.5} />
             </View>
             <AppText variant="caption" style={styles.locationText}>
-              {ride.pickupAddress}
+              {ride.pickupLocation.address}
             </AppText>
           </View>
 
@@ -218,7 +248,7 @@ const handleStartTrip = async () => {
             </View>
             <View style={styles.destinationRow}>
               <AppText variant="caption" style={styles.locationText}>
-                {ride.destinationAddress}
+                {ride.destinationLocation.address}
               </AppText>
               <View style={styles.timerBadge}>
                 <AppText variant="xs" style={styles.timerText}>
@@ -271,7 +301,7 @@ const handleStartTrip = async () => {
               variant="body"
               style={[styles.detailValue, { color: appColors.accent }]}
             >
-              NGN3,200
+             {ride.price}
             </AppText>
           </View>
         </View>
@@ -308,7 +338,7 @@ const handleStartTrip = async () => {
 
           <TouchableOpacity
             style={styles.actionBtn}
-            // onPress={onCancel}
+            // onPress={onCancelRide}
             disabled={isButtonDisabled}
             activeOpacity={0.7}
           >

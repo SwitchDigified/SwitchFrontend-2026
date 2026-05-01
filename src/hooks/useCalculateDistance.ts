@@ -1,5 +1,4 @@
-import { useEffect, useState } from 'react';
-import { useAppSelector } from '../store/hooks';
+import { useMemo } from 'react';
 import type { RideCoordinates } from '../store/driverCurrentRideSlice';
 
 export type DistanceAndTime = {
@@ -20,16 +19,6 @@ export const useCalculateDistance = (
   startLocation: RideCoordinates | null | undefined,
   endLocation: RideCoordinates | null | undefined
 ): DistanceAndTime => {
-  const [result, setResult] = useState<DistanceAndTime>({
-    distanceKm: 0,
-    timeRemaining: '0 min',
-    distanceString: '0 km',
-  });
-
-  // Get current ride and location from Redux store
-  const currentRide = useAppSelector((state) => state.driverCurrentRide.currentRide);
-  const currentLocation = useAppSelector((state) => state.driverLocation.currentLocation);
-
   /**
    * Haversine formula to calculate distance between two coordinates
    * @returns Distance in kilometers
@@ -78,20 +67,19 @@ export const useCalculateDistance = (
     return (distanceKm / AVERAGE_SPEED) * 60; // Convert to minutes
   };
 
-  useEffect(() => {
+  return useMemo(() => {
     // Validate inputs
     if (
-      !startLocation?.latitude ||
-      !startLocation?.longitude ||
-      !endLocation?.latitude ||
-      !endLocation?.longitude
+      typeof startLocation?.latitude !== 'number' ||
+      typeof startLocation?.longitude !== 'number' ||
+      typeof endLocation?.latitude !== 'number' ||
+      typeof endLocation?.longitude !== 'number'
     ) {
-      setResult({
+      return {
         distanceKm: 0,
         timeRemaining: '0 min',
         distanceString: '0 km',
-      });
-      return;
+      };
     }
 
     // Calculate distance between start and end locations
@@ -105,12 +93,15 @@ export const useCalculateDistance = (
     // Calculate time based on distance
     const timeInMinutes = calculateTimeFromDistance(distance);
 
-    setResult({
+    return {
       distanceKm: distance,
       timeRemaining: formatTime(timeInMinutes),
       distanceString: `${distance.toFixed(1)} km`,
-    });
-  }, [startLocation, endLocation, currentRide, currentLocation]);
-
-  return result;
+    };
+  }, [
+    startLocation?.latitude,
+    startLocation?.longitude,
+    endLocation?.latitude,
+    endLocation?.longitude,
+  ]);
 };

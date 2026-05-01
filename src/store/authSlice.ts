@@ -1,6 +1,6 @@
 import { createAsyncThunk, createSlice, PayloadAction } from '@reduxjs/toolkit';
 import { ZodError } from 'zod';
-import { signInWithCustomToken, getAuth } from '@react-native-firebase/auth';
+import { signInWithCustomToken, getAuth, signOut } from '@react-native-firebase/auth';
 import messaging from '@react-native-firebase/messaging';
 import { authApi, firestoreApi } from '../api/apiClient';
 import {
@@ -505,8 +505,15 @@ export const registerAndLogin = createAsyncThunk<
 export const logout = createAsyncThunk<void, void, { dispatch: any }>(
   'auth/logout',
   async (_, { dispatch }) => {
-    // Logout is handled client-side through Redux state clearing
-    // No server-side logout needed for stateless auth
+    try {
+      // Sign out from Firebase Auth
+      const auth = getAuth();
+      await signOut(auth);
+      console.log('[authSlice] Firebase signOut completed successfully');
+    } catch (error) {
+      console.error('[authSlice] Error during Firebase signOut:', error);
+      // Continue with Redux state clearing even if signOut fails
+    }
     return undefined;
   }
 );
